@@ -50,6 +50,24 @@ test("a turn that went on to anything else is not asked, and neither is one with
   assert.equal(nextCardCheck(turn([bash("echo 'more queued (a)' # stack-ready.mjs"), "more queued (a)"])).ask, null, "only the tool's own line counts");
 });
 
+test("bookkeeping calls are not starting the next card (Checker 2, F1): READY, wrap-up, plan, board step, then the watch still asks", () => {
+  const watch = [bash(WATCH), "started"];
+  const book = {
+    "SendMessage READY": { name: "SendMessage", input: { to: "local_x", message: "READY" } },
+    "wrap_up": { name: "mcp__ccd_turn__wrap_up", input: { recap: "x" } },
+    "update_plan advance": { name: "mcp__ccd_turn__update_plan", input: { advance: true } },
+    "board step": { name: "mcp__abc__step", input: { card: "c" } },
+    "ToolSearch": { name: "ToolSearch", input: { query: "x" } },
+    "Read": { name: "Read", input: { file_path: "/x/f" } },
+    "read-only git": bash("git -C /x/wt status --short"),
+  };
+  for (const [what, call] of Object.entries(book)) {
+    assert.match(nextCardCheck(turn(ready(MORE), [call, "ok"], watch)).ask ?? "", /Start the next card now/, `${what}, then watch`);
+    assert.match(nextCardCheck(turn(ready(MORE), watch, [call, "ok"])).ask ?? "", /Start the next card now/, `watch, then ${what}`);
+  }
+  assert.equal(nextCardCheck(turn(ready(MORE), [book["SendMessage READY"], "ok"], [bash("git -C /x/wt worktree add -b build/y /x/w2"), "ok"], watch)).ask, null, "bookkeeping then a real start is starting");
+});
+
 test("only the LAST stack-ready of the turn counts", () => {
   assert.equal(nextCardCheck(turn(ready(MORE), [bash("git commit -m x"), "ok"], ready(SIGNAL))).ask, null);
   assert.notEqual(nextCardCheck(turn(ready(SIGNAL), [bash("git commit -m x"), "ok"], ready(MORE))).ask, null);

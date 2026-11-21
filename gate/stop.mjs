@@ -119,6 +119,16 @@ export function unpushedCheck(state, refused) {
 // arming the wake watch (a Bash running wake-watch.mjs). Asked once per turn: a second stop in a row passes (stop_hook_active).
 const STACK_READY = /\bstack-ready\.mjs\b/, WATCH = /\bwake-watch\.mjs\b/;
 const QUEUED_LINE = /STACK-READY OK:[^\n]*?(?:more queued|waiting for its group[^(\n]*)\s*\(([^)\n]{1,300})\)/;
+// A call "starts work" only when it changes something: an edit, a write, or a Bash that is not arming the watch, running stack-ready or a read-only git. Bookkeeping (SendMessage READY, the
+// turn's wrap-up and plan, board store calls, ToolSearch, Read, notifications) never counts: a turn that sends READY or wraps up and then arms the watch has not started the next card (Checker 2, F1).
+const READ_ONLY_GIT = /^\s*git(?:\s+-C\s+\S+)?\s+(?:status|log|rev-parse|rev-list|show|diff|branch|for-each-ref|ls-files|ls-remote|cat-file|notes\s+show|worktree\s+list|fetch)\b/;
+export function startsWork(c) {
+  const name = String(c?.name ?? "");
+  if (name === "Edit" || name === "Write" || name === "NotebookEdit") return true;
+  if (name !== "Bash") return false;
+  const cmd = String(c.input?.command ?? "");
+  return !(WATCH.test(cmd) || STACK_READY.test(cmd) || READ_ONLY_GIT.test(cmd));
+}
 export function nextCardCheck(turn) {
   const results = new Map(), calls = [];
   for (const l of Array.isArray(turn) ? turn : []) {
@@ -131,7 +141,7 @@ export function nextCardCheck(turn) {
   if (!m) return { ask: null };
   const ids = m[1].replace(/\s+not built\s*$/, "").split(",").map((s) => s.trim()).filter((s) => WOKEN_CARD.test(s));
   if (!ids.length) return { ask: null };
-  if (calls.slice(at + 1).some((c) => !(c.name === "Bash" && WATCH.test(String(c.input?.command ?? ""))))) return { ask: null };
+  if (calls.slice(at + 1).some(startsWork)) return { ask: null };
   return { ask: `stack-ready says ${ids.length === 1 ? "a card" : `${ids.length} cards`} of yours ${ids.length === 1 ? "is" : "are"} queued behind this one (${ids.map(idText).join(", ")}), and this turn ends without starting ${ids.length === 1 ? "it" : "the next"}. Start the next card now (cut its worktree on this tip and make the first commit); do not end on "next is X, dispatch watch armed": the watch fires only when the board sees you idle. Taking your next queued card needs no go from anyone.` };
 }
 // The checks for one stop: the lead is never refused here; a roster role is asked the things above.
