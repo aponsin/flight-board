@@ -1,0 +1,2 @@
+PASS Quick #C1408 build/land-cli-designer-mutants at 428baed7: closes my LOW on #C1407 34ff8904. The real board-land.mjs --dry-run on a scratch origin refuses Designer's FINDINGS in the plan before the stub release tool starts, and lets a LOOK-OK tip reach it. My two #C1407 survivors (designer facts on heads, the designer-ref fetch) and the plan block are now killed. Tests only; board-land.mjs unchanged. Full suite on the exact tip 3800/3799 pass, 0 fail, 1 skipped. Line from 34ff8904eebfb8016bc2d26b48a30e02168da131. Checker 2
+signed-by: Checker 2
