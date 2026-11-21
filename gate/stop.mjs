@@ -113,14 +113,36 @@ export function unpushedCheck(state, refused) {
   const n = state.ahead;
   return { judged: { branch: state.branch, sha: state.sha }, ask: `Your build branch ${state.branch} has ${n} commit${n === 1 ? "" : "s"} that origin does not have (tip ${state.sha.slice(0, 12)}). Push it once the work is green, if it is your own build branch (the owner authorises pushing your own build branch: git push origin ${state.branch}), then send READY. This is asked once per tip.` };
 }
-// The checks for one stop: the lead is never refused here; a roster role is asked the three things above.
+// #C1390 (11-20, twice: #C1382 then #C1383 were pushed, the turn said "next is X, not started, dispatch watch armed" and went idle; the watch did not fire and the board flagged a stall until Manager
+// said go): when stack-ready has just told the builder that cards are queued behind this one ("more queued (...)" or "waiting for its group ... (... not built)"), the turn must go on to start the
+// next card, not end on arming the watch. The evidence is the tool, never the wording: the last stack-ready run of the turn printed one of those two lines, and no call after it is anything but
+// arming the wake watch (a Bash running wake-watch.mjs). Asked once per turn: a second stop in a row passes (stop_hook_active).
+const STACK_READY = /\bstack-ready\.mjs\b/, WATCH = /\bwake-watch\.mjs\b/;
+const QUEUED_LINE = /STACK-READY OK:[^\n]*?(?:more queued|waiting for its group[^(\n]*)\s*\(([^)\n]{1,300})\)/;
+export function nextCardCheck(turn) {
+  const results = new Map(), calls = [];
+  for (const l of Array.isArray(turn) ? turn : []) {
+    if (l?.type === "user" && Array.isArray(l.message?.content)) for (const p of l.message.content) if (p?.type === "tool_result") results.set(p.tool_use_id, typeof p.content === "string" ? p.content : Array.isArray(p.content) ? p.content.map((c) => c?.text ?? "").join("\n") : "");
+    if (l?.type === "assistant" && Array.isArray(l.message?.content)) for (const p of l.message.content) if (p?.type === "tool_use") calls.push(p);
+  }
+  const at = calls.findLastIndex((c) => c.name === "Bash" && STACK_READY.test(String(c.input?.command ?? "")));
+  if (at < 0) return { ask: null };
+  const m = QUEUED_LINE.exec(String(results.get(calls[at].id) ?? ""));
+  if (!m) return { ask: null };
+  const ids = m[1].replace(/\s+not built\s*$/, "").split(",").map((s) => s.trim()).filter((s) => WOKEN_CARD.test(s));
+  if (!ids.length) return { ask: null };
+  if (calls.slice(at + 1).some((c) => !(c.name === "Bash" && WATCH.test(String(c.input?.command ?? ""))))) return { ask: null };
+  return { ask: `stack-ready says ${ids.length === 1 ? "a card" : `${ids.length} cards`} of yours ${ids.length === 1 ? "is" : "are"} queued behind this one (${ids.map(idText).join(", ")}), and this turn ends without starting ${ids.length === 1 ? "it" : "the next"}. Start the next card now (cut its worktree on this tip and make the first commit); do not end on "next is X, dispatch watch armed": the watch fires only when the board sees you idle. Taking your next queued card needs no go from anyone.` };
+}
+// The checks for one stop: the lead is never refused here; a roster role is asked the things above.
 export function stopRun(lines, { config, env = {}, now = Date.now(), dispatch = null, unpushed = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   if (!role || role === config.gate.managerRole || !config.roster.includes(role)) return { errs: [], record: null, note: null, liveNext: null, dispatchAsked: false };
   const ask = dispatch ? dispatchAsk(dispatch, now) : null;
   const wait = dispatch ? wokenCheck(dispatch.woken, dispatch.checkedAt, turnCalls(currentTurn(lines)), startedByWake(currentTurn(lines), lines)) : { judged: false, ask: null };
   const push = unpushed && !backgroundRunning(turnCalls(currentTurn(lines))) ? unpushedCheck(unpushed.state, unpushed.refused) : { ask: null, judged: null };
-  const errs = [ask, wait.ask, push.ask].filter(Boolean);
+  const next = nextCardCheck(currentTurn(lines));
+  const errs = [ask, wait.ask, push.ask, next.ask].filter(Boolean);
   return { errs, record: null, note: null, liveNext: null, dispatchAsked: !!ask, waitJudged: wait.judged, unpushedJudged: push.judged };
 }
 
