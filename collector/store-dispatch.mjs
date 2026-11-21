@@ -168,7 +168,7 @@ export function stackQueueFile(view, now) {
       batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
       stage: stageOf(c, e), // #C1391: the card's one stage (unbuilt, built, signed, landed, live): stack-ready sends the READY only when every other counted member of its group is built; an older queue file has no stage and gives the waiting note
       // #C1103 (Checker 2's M2): the store's own reading of "held" for the group order (orderCards: paused, isHeld = waiting_on or a blocked_reason, or a dependency not live), so the
-      // pre-push check and the store's stall line agree; `held` above stays what stack-ready waits on.
+      // pre-push check and the store's stall line agree; `stage` below is what stack-ready waits on.
       orderHeld: !!(c.paused || isHeld(c) || dependsNotLive(c, view.cards, evidenceById)),
       started: hasHeadEvidence(e),
       num: Number.isInteger(c.num) ? c.num : null, // #C1103: for the line that names the higher card

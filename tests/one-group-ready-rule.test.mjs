@@ -4,11 +4,11 @@
 // the old five rules disagreed on, the three kinds of rework, the shape of land-holds.json, and that the old rules are gone.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stageOf, stageRank, STAGES, groupStage, groupWaitsFor, reworkKind, ownerRework } from "../worker/group-rule.mjs";
-import { openGroupWithheld, isRework } from "../worker/board-rules.mjs";
+import { openGroupWithheld, isRework, slowWakes, groupReadyAt } from "../worker/board-rules.mjs";
 import { stackQueueFile, landHoldsFile } from "../collector/store-dispatch.mjs";
 import { stackReady } from "../scripts/stack-ready.mjs";
 
@@ -204,6 +204,51 @@ test("the five old group-ready rules are deleted and the callers import the one 
   assert.doesNotMatch(read("worker/group-rule.mjs"), /^\s*import\s/m, "the rule imports nothing");
   // stack-ready's group wait reads a groupmate's stage, not its start push or its pause
   assert.doesNotMatch(read("scripts/stack-ready.mjs"), /k\.held !== true/);
+});
+
+// Checker 2's F1 on 122bcd75: the slow clock of a held group card starts at the group's READY, in a stack or not (groupReadyAt used to answer only for a card inside a stack).
+test("the slow clock starts at the group's READY for a card outside a stack too: a built at 08:00, b reaches review at 14:00, five minutes later neither is slow", () => {
+  const MIN = 60e3, T14 = Date.parse("2026-11-20T14:00:00Z"), T8 = T14 - 6 * 60 * MIN, NOWMS = T14 + 5 * MIN;
+  const a = card("sample-a", { num: 1 }), b = card("sample-b", { num: 2 });
+  for (const stack of [undefined, { outside: true }, { tip: "abcdef012345", size: 2 }]) {
+    const evidence = { "sample-a": { ...EV.built, stack }, "sample-b": { ...EV.built, stack } };
+    const phaseStart = new Map([["sample-a|checker", T8], ["sample-b|checker", T14]]);
+    const slow = slowWakes({ now: NOWMS, cards: [a, b], evidence, openAskCards: new Set(), phaseStart, medians: { checker: 10 * MIN }, endsPassed: new Set() });
+    assert.deepEqual(slow, [], `stack ${JSON.stringify(stack)}: the group became ready at 14:00, five minutes ago`);
+    // the control: an hour after the READY it is slow
+    const later = slowWakes({ now: T14 + 60 * MIN, cards: [a, b], evidence, openAskCards: new Set(), phaseStart, medians: { checker: 10 * MIN }, endsPassed: new Set() });
+    assert.equal(later.length, 2, `stack ${JSON.stringify(stack)}: an hour past the READY both are slow`);
+  }
+  // a paused member that sits at review counts toward the group's READY time, as it counts for the group
+  assert.equal(groupReadyAt(a, EV.built, [a, card("sample-b", { num: 2, paused: 1 })], { "sample-a": EV.built, "sample-b": EV.built }, new Map([["sample-a|checker", T8], ["sample-b|checker", T14]])), T14);
+});
+
+// Checker 2's L1: the contract's "a test fails when another file decides about a group from a head, stackHold, wipHead, a signed phase or onMain". A line of code (not a comment) under worker/,
+// collector/ or scripts/ that names a group word and one of those facts together is such a decision, except in worker/group-rule.mjs; the few lines that name both for another reason are listed.
+test("no file but the one module decides about a group from a head, stackHold, wipHead, a signed phase or onMain", () => {
+  // lines that ask the module (groupStage, stageOf), the CI batch limit, the pair step's batch word, an import, the release tool's own group check, and the Worker's tool descriptions (prose, not code)
+  const SKIP_OK = [/groupStage\(|stageOf\(/, /CI_BATCH_LIMIT/, /step: "pair"/, /^\s*import\s/, /GROUP_MAX|roleUnsigned|ROLE_WORD/, /^\s*\{ name: "/];
+  const hits = [];
+  for (const dir of ["worker", "collector", "scripts"]) for (const f of readdirSync(join(HERE, "..", dir)).filter((n) => n.endsWith(".mjs"))) {
+    const path = `${dir}/${f}`;
+    if (path === "worker/group-rule.mjs") continue;
+    read(path).split("\n").forEach((line, n) => {
+      const code = line.replace(/\s\/\/.*$/, "");
+      if (/^\s*\/\//.test(line) || SKIP_OK.some((re) => re.test(code))) return;
+      if (/(batch|group|peer|member)/i.test(code) && /(stackHold|wipHead|headSha|\.onMain|onMain ===|\bsigned\b|signedOrLanded)/.test(code)) hits.push(`${path}:${n + 1}: ${code.trim().slice(0, 100)}`);
+    });
+  }
+  assert.deepEqual(hits, [], "a group is decided by groupStage (worker/group-rule.mjs), nowhere else");
+});
+
+// Checker 2's L2: landHoldsFile lists no peers for a card that has landed (its stage is landed or live): dropping that skip must fail a test.
+test("a card that has landed is listed no peers; a groupmate still to land is listed its peers", () => {
+  const cards = [card("sample-a"), card("sample-b"), card("sample-c")];
+  const evidence = { "cards.sample-a": { value: EV.landed }, "cards.sample-b": { value: EV.signed }, "cards.sample-c": { value: EV.built } };
+  const holds = landHoldsFile({ cards, evidence, asks: [] }, NOW);
+  assert.equal("sample-a" in holds.groups, false, "a is on main: the landing has nothing to carry for it");
+  assert.deepEqual(holds.groups["sample-b"], ["sample-c"], "a is landed and is no peer; c is still to land");
+  assert.deepEqual(holds.groups["sample-c"], ["sample-b"]);
 });
 
 test("board-land.mjs and its import closure are untouched by this card", () => {

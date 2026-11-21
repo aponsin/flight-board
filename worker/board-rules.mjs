@@ -1439,10 +1439,11 @@ export const NOTE_FRESH_MS = 60 * 60_000;
 // #C1120 (11-16, #C1104, #C1105, #C1108: Manager got "rework reason missing" and then, about 30 s after the reason was attached, "is slow with no reason"): attaching a reason
 // clears the card's rework flag, so the #C1063 clause below (which needs the flag) never saw it. `reasonAt` is { card_id: time } of the newest rework_history row; a reason
 // attached in the last NOTE_FRESH_MS counts as the line's reason like a fresh next_note, flag or no flag.
-// #C1358 (Checker 2's F1): the slow clock of a card in a stack group starts at the group's READY, when its last member reached review: the latest review-lane start among the group's open members
-// (null for any other card). The page reads the same time (groupReadyAt in page/board.template.html).
+// #C1358 (Checker 2's F1), #C1391 (Checker 2's F1 on 122bcd75): the slow clock of a card in a group starts at the group's READY, when its last member reached review: the latest review-lane start among the
+// group's counted members (a paused or blocked one included). It answers for every grouped card at a review phase, in a stack or not: the card's group wait holds it the same way. null for any other card.
+// The page reads the same time (groupReadyAt in page/board.template.html).
 export function groupReadyAt(c, v, cards, evidence, phaseStart) {
-  if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || !v.stack || v.stack.outside === true) return null;
+  if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0])) return null;
   let at = 0;
   for (const k of groupMembers(c, cards)) {
     const ph = evidence?.[k.id]?.lit?.[0];

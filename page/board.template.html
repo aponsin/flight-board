@@ -2899,10 +2899,10 @@ const gwLabel=gw=>gw.length===1?cardWord(gw[0]):gw.length+" cards";
 // #C1388: the card's own reading says it (`wait` is "group", `waitsFor` the cards, [{ id, num }]); the page no longer looks at the group's evidence.
 function groupWaitFor(i){if(!STORE||!i||i.dropped||["done","paused","stuck"].includes(i.status))return [];const R=readingOf(i.id);
   return R.wait==="group"&&Array.isArray(R.waitsFor)?R.waitsFor:[]}
-// #C1358 (Checker 2's F1): the slow clock of a card in a stack group starts when the group's READY goes out, which is when its LAST member reached review: the latest review-lane start among the group's open members
+// #C1358 (Checker 2's F1), #C1391: the slow clock of a card in a group, in a stack or not, starts when the group's READY goes out, which is when its LAST member reached review: the latest review-lane start among the group's open members
 // (null for any other card). A member built at 9:00 and the last one at 11:00: the first reads 0 h at 11:00, not 2 h. The server's slowWakes reads the same time (worker/board-rules.mjs groupReadyAt).
-function groupReadyAt(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.status==="done"||!REVIEW_LANES.includes(i.phase))return null;let at=0;
-  for(const k of state.initiatives){if(!k||k.batch!==i.batch||k.status==="done"||k.dropped||k.status==="paused"||!REVIEW_LANES.includes(k.phase))continue;const e=phaseStart(k,k.phase);if(e&&num(e.start)!=null)at=Math.max(at,e.start)}
+function groupReadyAt(i){if(!STORE||!i||!i.batch||i.status==="done"||!REVIEW_LANES.includes(i.phase))return null;let at=0;
+  for(const k of state.initiatives){if(!k||k.batch!==i.batch||k.status==="done"||k.dropped||!REVIEW_LANES.includes(k.phase))continue;const e=phaseStart(k,k.phase);if(e&&num(e.start)!=null)at=Math.max(at,e.start)}
   return at||null}
 // #C1383: the pill's look, one function for a card's row and its place on its group's rail (the words are pillOf's).
 function pillClass(i,R){return R.state==="stuck"&&i.status!=="done"?"stalled":verifying(i)?"verifying":i.status==="active"&&R.state==="waiting"&&R.wait&&R.wait!=="turn"?"queued":R.state==="queued"&&i.status==="active"?"queued":esc(i.status)}
