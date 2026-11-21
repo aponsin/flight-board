@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, TRUTH_CARD, truthWake, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupRenameRefusal, moveToGroupRefusal, slugOfName, groupPastBuild, slotKeyOf, SLOT_PREFIX, hasPlace, groupCompare, orderListOf, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, isBoardCard, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
+import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, TRUTH_CARD, truthWake, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, outdatedRefusal, replacedByNum, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupRenameRefusal, moveToGroupRefusal, slugOfName, groupPastBuild, slotKeyOf, SLOT_PREFIX, hasPlace, groupCompare, orderListOf, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, isBoardCard, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -128,7 +128,7 @@ async function repoRefusal(db) {
 const holdEndUnknown = async (db, fields) => {
   const ref = fields.hold_end;
   if (ref === undefined || ref === null) return null;
-  const ok = await db.prepare("SELECT 1 AS x FROM asks WHERE id = ? AND closed_at IS NULL UNION ALL SELECT 1 AS x FROM cards WHERE id = ? AND dropped = 0 AND done_at IS NULL").bind(ref, ref).first();
+  const ok = await db.prepare("SELECT 1 AS x FROM asks WHERE id = ? AND closed_at IS NULL AND outdated_at IS NULL UNION ALL SELECT 1 AS x FROM cards WHERE id = ? AND dropped = 0 AND done_at IS NULL").bind(ref, ref).first();
   return ok ? null : { rule: "hold-end-unknown", detail: `${ref} is no open ask and no live card` };
 };
 
@@ -575,15 +575,15 @@ async function syncStalls(db, now) {
   const evRows = (await db.prepare("SELECT key, value, read_at FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
   let agents = {}; const evidence = {}, readAt = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else { evidence[r.key.slice(6)] = v; readAt[r.key.slice(6)] = r.read_at; } }
-  const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
+  const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND outdated_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait IS NULL GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
   // holds-need-an-end (#C838): a held card whose end has passed, or that has had none for 2 h, wakes Manager once (one row per card and reason).
   // #C915 (b): a hold_end on any card (held or not) is read, so an open one silences the card's stall and a passed one does not.
   const refs = [...new Set(cards.filter((c) => c.hold_end).map((c) => c.hold_end))];
   const endsPassed = new Set();
   for (const ref of refs) {
-    const ask = await db.prepare("SELECT closed_at FROM asks WHERE id = ?").bind(ref).first();
-    if (ask) { if (ask.closed_at) endsPassed.add(ref); continue; }
+    const ask = await db.prepare("SELECT closed_at, outdated_at FROM asks WHERE id = ?").bind(ref).first();
+    if (ask) { if (ask.closed_at || ask.outdated_at) endsPassed.add(ref); continue; }
     const card = cards.find((c) => c.id === ref);
     if (card && (card.dropped || card.done_at || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
   }
@@ -599,7 +599,7 @@ async function syncStalls(db, now) {
     if (c) Object.assign(c, { waiting_on: null, blocked_reason: null, hold_end: null, held_at: null, hold_until: null, ...(h.clearCheckAt ? { check_at: null } : {}) });
   }
   // #C904: an ask the owner has left 10 min wakes Manager once, before the owner's phone gets it at 30 (push-rules.mjs).
-  const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
+  const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, outdated_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL AND outdated_at IS NULL").all()).results;
   // #C927: a repository whose oldest open card reading is over an hour old wakes Manager once per spell (staleCopies, board-rules.mjs). The row is
   // kept (taken or not) while the spell lasts, so a later sync never tells it again; it goes when the repository's readings are fresh again.
   const knobsNow = await knobsStored(db); // #C1106: the posted settings of the step clocks (a setting that is missing or out of bounds is its default)
@@ -623,7 +623,7 @@ async function syncStalls(db, now) {
   // #C1295: per repository: the Set of the switch rows that are on ("board", "product"), as the dispatch builds it from the view.
   const stackOn = new Set((await db.prepare("SELECT repo FROM stack_switch WHERE stack = 1 AND repo IN ('board', 'product')").all()).results.map((r) => r.repo));
   // The dispatch holds a card only for an UNANSWERED open ask (an answered one left open does not), so the open-group rule is given that set (#C1082, Checker 2's F1).
-  const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
+  const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND outdated_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   // #C1073: a decision open on a thread holds its card as the dispatch does (collector/store-dispatch.mjs openDecisionCards), so the idle-agent line never counts or names it as queued.
   const decisionRows = (await db.prepare("SELECT id, thread_id, author, body, created_at, kind, resolved FROM messages WHERE thread_id IN (SELECT thread_id FROM messages WHERE kind = 'decision')").all()).results;
   const decisionHolds = openDecisionHolds(decisionRows, cards); // card id -> the open decision's message id: the held card is kept out of the idle count but named in its own row (Manager's second change)
@@ -690,7 +690,7 @@ async function syncStalls(db, now) {
   const pausedDep = pausedDepLanded({ now, cards, evidence, endsPassed });
   for (const r of (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ?").bind(`%${PAUSE_DEP_END}`).all()).results) if (!pausedDep.some((s) => s.card_id === r.card_id && s.reason === r.reason)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
   // #C1081: threads whose newest message is the owner's (the last OWNER_WORD_DAYS days only), joined to what says whether the thread is still open.
-  const ownerLast = (await db.prepare("SELECT m.thread_id AS thread_id, m.created_at AS at, m.resolved AS resolved, m.body AS body, (SELECT p.body FROM messages p WHERE p.thread_id = m.thread_id AND p.author <> 'owner' AND p.created_at < m.created_at ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS prev_team_body, (m.screenshots IS NOT NULL OR EXISTS (SELECT 1 FROM file_links l WHERE l.ref_kind = 'message' AND l.ref_id = m.id)) AS has_files,a.num AS ask_num, a.closed_at AS ask_closed_at, a.withdrawn_at AS ask_withdrawn_at, c.num AS card_num, c.dropped AS card_dropped, c.done_at AS card_done_at, t.num AS thread_num FROM messages m LEFT JOIN asks a ON a.id = m.thread_id LEFT JOIN cards c ON c.id = m.thread_id LEFT JOIN threads t ON t.id = m.thread_id WHERE m.author = 'owner' AND m.created_at >= ? AND NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND (n.created_at > m.created_at OR (n.created_at = m.created_at AND n.id > m.id)))").bind(now - pushLim.wordDays * 864e5).all()).results;
+  const ownerLast = (await db.prepare("SELECT m.thread_id AS thread_id, m.created_at AS at, m.resolved AS resolved, m.body AS body, (SELECT p.body FROM messages p WHERE p.thread_id = m.thread_id AND p.author <> 'owner' AND p.created_at < m.created_at ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS prev_team_body, (m.screenshots IS NOT NULL OR EXISTS (SELECT 1 FROM file_links l WHERE l.ref_kind = 'message' AND l.ref_id = m.id)) AS has_files,a.num AS ask_num, a.closed_at AS ask_closed_at, a.withdrawn_at AS ask_withdrawn_at, a.outdated_at AS ask_outdated_at, c.num AS card_num, c.dropped AS card_dropped, c.done_at AS card_done_at, t.num AS thread_num FROM messages m LEFT JOIN asks a ON a.id = m.thread_id LEFT JOIN cards c ON c.id = m.thread_id LEFT JOIN threads t ON t.id = m.thread_id WHERE m.author = 'owner' AND m.created_at >= ? AND NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND (n.created_at > m.created_at OR (n.created_at = m.created_at AND n.id > m.id)))").bind(now - pushLim.wordDays * 864e5).all()).results;
   const stalls = [...waits, ...quota.line, ...landed, ...pausedDep, ...ownerWordWakes({ rows: ownerLast, now, lim: pushLim }),...heldWakes({ now, cards, endsPassed, holdMs: holdNoEndMsOf(knobsNow) }), ...slow, ...order, ...reviewLate,...await syncE2e(db, now), ...await syncTruth(db, now),...askWakes({ asks: openAsks, now, lim: pushLim }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now, lim: pushLim }), ...watchWakes({ watch: watchNow }), ...rcOffNow, ...copyStalls, ...closing];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // #C1097: the idle-agent stalls that are current (after the quota hold) are kept as taken rows the dispatch reads through the view (agentStallRow, board-rules.mjs);
@@ -748,7 +748,7 @@ export async function syncBranchSweep(db, now) {
   let value = null; try { value = JSON.parse(row.value); } catch { /* none */ }
   const ask = sweepAsk(value);
   if (!ask) return null;
-  const had = await db.prepare("SELECT 1 AS x FROM asks WHERE type = 'Terminal' AND title LIKE ? AND (closed_at IS NULL OR created_at > ?) LIMIT 1").bind(`${SWEEP_TITLE}%`, now - SWEEP_EVERY_MS).first();
+  const had = await db.prepare("SELECT 1 AS x FROM asks WHERE type = 'Terminal' AND title LIKE ? AND ((closed_at IS NULL AND outdated_at IS NULL) OR created_at > ?) LIMIT 1").bind(`${SWEEP_TITLE}%`, now - SWEEP_EVERY_MS).first();
   if (had) return null;
   return createAsk(db, now, { type: "Terminal", title: ask.title, asked_by: "Manager", commands: ask.commands });
 }
@@ -1160,6 +1160,19 @@ export async function withdrawDecision(db, now, who, args) {
   await db.prepare("UPDATE messages SET kind = 'withdrawn', options = NULL, screenshots = NULL, body = ? WHERE id = ?").bind(WITHDRAWN_TEXT, id).run();
   return { ok: true, id, thread_id: m.thread_id, withdrawn: true };
 }
+// #C1409: Manager's door calls off a Terminal, Action or Later ask (args: id, reason, replaced_by?). The ask is NOT closed: it stays where the owner reads it, marked Outdated with
+// the reason, and he closes it himself; but it is owed by no one, so no stall, push, wake, hold or count reads it as waiting (isOutdated, board-rules.mjs). Nothing is deleted.
+export async function outdateAsk(db, now, who, args) {
+  const keys = ["id", "reason", "replaced_by"];
+  if (!args || typeof args !== "object" || Object.keys(args).some((k) => !keys.includes(k)) || typeof args.id !== "string") return refuse(db, now, { rule: "outdate-shape", detail: "id, reason and optionally replaced_by; nothing else" }, null, who);
+  const ask = await db.prepare("SELECT id, num, type, answered_at, closed_at, outdated_at, card_id FROM asks WHERE id = ?").bind(args.id).first();
+  const n = replacedByNum(args.replaced_by);
+  const replacement = n === null ? null : await db.prepare("SELECT id, num FROM asks WHERE num = ?").bind(n).first();
+  const bad = outdatedRefusal(ask ?? null, who, { reason: args.reason, replacedBy: args.replaced_by, replacement });
+  if (bad) return refuse(db, now, bad, ask?.card_id ?? null, who);
+  await db.prepare("UPDATE asks SET outdated_at = ?, outdated_by = ?, outdated_reason = ?, replaced_by = ? WHERE id = ?").bind(now, who, args.reason.trim(), n, args.id).run();
+  return { ok: true, id: args.id, outdated: true, ...(n !== null ? { replaced_by: n } : {}) };
+}
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
   const claimed = typeof session === "string" && session.trim() ? session.slice(0, 80) : null;
@@ -1186,7 +1199,7 @@ export async function guardedInbox(db, now, session) {
 // Manager's typed read: returns what is for Manager as data and marks it taken (the batch closes, wake.seen_at moves).
 export async function takeInbox(db, now) {
   const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at FROM messages WHERE delivered_at IS NULL AND author = 'owner' ORDER BY created_at").all()).results;
-  const answers = (await db.prepare("SELECT id, num, title, answer, answer_status, answer_note, answered_at, answered_by FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
+  const answers = (await db.prepare("SELECT id, num, title, answer, answer_status, answer_note, answered_at, answered_by, outdated_at, outdated_reason FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
   // The files attached to each message and answer (store-inbox-shows-files, #C837): [{ id, name, type, size, fetch }], in the order attached, empty when none.
   // `fetch` is the path under the board's address (GET <address>/_blob/<id>, a signed-in session; no tool returns the bytes). Chunks of 90 ids plus the kind stay under D1's 100 binds.
   const filesOf = async (kind, rows) => {
@@ -1205,6 +1218,12 @@ export async function takeInbox(db, now) {
   // Only that: the import kept every old response object whole (Ack, Done, Help with files, a picked letter), and those read as they were stored
   // (Checker F1): the object must say its choice was "something else", as the view's rule does (a Decision whose answer matches no option).
   for (const a of answers) { const o = a.answer_status ? null : typedOther(a.answer); if (o && o.choice === "something else") a.answer = o.note.trim() || "Something else"; }
+  // #C1409: an answer to an ask Manager called off still reaches Manager through this same answers list (answered_at wakes it, as for any answer), and says so:
+  // `outdated_note` tells him his own call-off and that his action may need undoing. Only what is returned changes.
+  for (const a of answers) {
+    if (a.outdated_at != null) a.outdated_note = `You called ask #T${a.num} off ('${a.outdated_reason}'); the owner answered it anyway: ${a.answer}. Check whether his action still needs undoing.`;
+    delete a.outdated_at; delete a.outdated_reason;
+  }
   // Mark exactly the rows returned: one written between the SELECT and the UPDATE stays for the next read, never lost (Checker).
   // D1 binds at most 100 values per statement (Checker): mark in chunks of 90 ids plus the time.
   const mark = async (sql, rows) => { for (let i = 0; i < rows.length; i += 90) { const ids = rows.slice(i, i + 90).map((r) => r.id); await db.prepare(sql.replace("(?)", `(${ids.map(() => "?").join(", ")})`)).bind(now, ...ids).run(); } };

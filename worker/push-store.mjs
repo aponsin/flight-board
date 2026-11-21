@@ -61,7 +61,7 @@ const record = (db, now, result, sent) => db.prepare("UPDATE push_state SET run_
 export async function pushRun(db, now, env, fetchFn = fetch) {
   const jwk = vapidJwk(env.PUSH_VAPID_JWK);
   if (!jwk) { await record(db, now, "no key: PUSH_VAPID_JWK is not set", false); return { ok: false, reason: "no key" }; }
-  const asks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
+  const asks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, outdated_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL AND outdated_at IS NULL").all()).results;
   const ships = (await db.prepare("SELECT version, shipped_at, acked_at FROM ships WHERE acked_at IS NULL").all()).results;
   const sent = new Set((await db.prepare("SELECT kind, ref FROM push_sent").all()).results.map((r) => `${r.kind}:${r.ref}`));
   // #C1016: the newest evidence write that is not a run report (key run.*) is the probe's heartbeat, as the page's silent chip reads it.

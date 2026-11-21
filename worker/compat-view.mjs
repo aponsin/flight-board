@@ -94,6 +94,9 @@ export function waitingDoc(a) {
   // #C987: closed by the board (its card moved on), so the page knows the close answered the owner's earlier word (Security F1 on 1ab7673).
   // closed_by, not auto_closed_at: a board close that was reopened and then closed by its asker is the asker's close.
   if (a.closed_at && a.closed_by === "board") doc.autoClosed = true;
+  // #C1409: Manager called this ask off. It is NOT done (the owner closes it himself); the page draws it Outdated in red with the reason and the replacement's link.
+  // The contract with the page: outdated: { at: <ms>, by: <role>, reason: <string>, replacedBy?: <int ask num> }.
+  if (a.outdated_at != null) doc.outdated = prune({ at: a.outdated_at, by: a.outdated_by, reason: a.outdated_reason, replacedBy: Number.isInteger(a.replaced_by) ? a.replaced_by : undefined });
   return prune(doc);
 }
 
@@ -212,7 +215,7 @@ export function derivedDoc(view) {
     if (!rows.get(id)?.repo || c.phase !== "ship" || typeof v?.onMain !== "boolean") continue;
     c.wait = v.onMain ? "install" : "release";
     // #C838: a card waiting for the install names the deploy ask it waits on (its newest open ask, as #T<n>); the page says "no deploy ask yet" when it has none.
-    if (v.onMain) { const open = (view.asks ?? []).filter((a) => a.card_id === id && !a.closed_at && Number.isInteger(a.num)); if (open.length) c.waitAsk = Math.max(...open.map((a) => a.num)); }
+    if (v.onMain) { const open = (view.asks ?? []).filter((a) => a.card_id === id && !a.closed_at && !a.outdated_at && Number.isInteger(a.num)); if (open.length) c.waitAsk = Math.max(...open.map((a) => a.num)); }
   }
   const rel = view.evidence?.releases?.value;
   return prune({ id: "all", at: view.now, cards, times: timesOfHistory(view.history), live, releaseTimes: rel && typeof rel === "object" && !Array.isArray(rel) && Object.keys(rel).length ? rel : undefined });

@@ -30,7 +30,7 @@ const minTxt = (m) => `${Math.ceil(m)}`;
 export const ASK_WAKE_PREFIX = "ask:";
 
 export function askWaitsFrom(a) {
-  if (!a || a.closed_at != null || a.answered_at != null || a.withdrawn_at != null) return null;
+  if (!a || a.closed_at != null || a.answered_at != null || a.withdrawn_at != null || a.outdated_at != null) return null; // an outdated ask (#C1409) is called off: the owner owes nothing on it
   // #C925: a promise (owed_by) waits on its promiser, never on the owner: no 10-minute nudge, no phone push (promiseWakes below).
   if (typeof a.owed_by === "string" && a.owed_by) return null;
   if (a.type === "Later") return typeof a.eta_at === "number" ? a.eta_at : null;
@@ -88,7 +88,7 @@ export function ownerWordWakes({ rows, now, lim = {} }) {
     if (!r.has_files && ownerAck(r.body, r.prev_team_body)) continue;
     const age = now - r.at;
     if (age < wordMin * MIN || age > wordDays * DAY) continue;
-    if (r.resolved || r.ask_closed_at != null || r.ask_withdrawn_at != null || r.card_dropped || r.card_done_at != null) continue;
+    if (r.resolved || r.ask_closed_at != null || r.ask_withdrawn_at != null || r.ask_outdated_at != null || r.card_dropped || r.card_done_at != null) continue;
     const label = Number.isInteger(r.ask_num) ? `#T${r.ask_num}` : Number.isInteger(r.card_num) ? `#C${r.card_num}` : Number.isInteger(r.thread_num) ? `#T${r.thread_num}` : null;
     if (label === null) continue;
     const k = ownerWordReminder(age, lim);
@@ -101,7 +101,7 @@ export function ownerWordWakes({ rows, now, lim = {} }) {
 // ("promise:<id>"), a reason that never changes for that ask, so it is told once. Open only: a closed or answered promise is kept.
 export const PROMISE_WAKE_PREFIX = "promise:";
 export function promiseWakes({ asks, now }) {
-  return asks.filter((a) => a && typeof a.owed_by === "string" && a.owed_by && a.type === "Later" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null
+  return asks.filter((a) => a && typeof a.owed_by === "string" && a.owed_by && a.type === "Later" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null && a.outdated_at == null
     && typeof a.eta_at === "number" && a.eta_at <= now && Number.isInteger(Number(a.num))).map((a) => ({
     card_id: `${PROMISE_WAKE_PREFIX}${a.id}`,
     reason: `#T${Number(a.num)} is due now: you promised it to the owner for this time; do it, or post on its thread when it will be`,

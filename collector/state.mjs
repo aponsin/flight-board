@@ -1753,7 +1753,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const dispatchStatePath = join(stateDir, id, DISPATCH_STATE_FILE);
     let dispatchBefore = null;
     try { const r = readTail(dispatchStatePath, 64 * 1024); if (r?.whole) dispatchBefore = JSON.parse(r.text); } catch { /* none */ }
-    const askedCards = new Set(waitingDocs.filter((d) => d && !d.done && !d.response && typeof d.initiative === "string").map((d) => d.initiative));
+    const askedCards = new Set(waitingDocs.filter((d) => d && !d.done && !d.outdated && !d.response && typeof d.initiative === "string").map((d) => d.initiative));
     const dispatch = waitingKnown ? dispatchItems({ cards: cards.filter((k) => !closed(k)), agents, asked: askedCards, roster: config.roster, lead: config.gate.managerRole, now, before: dispatchBefore }) : { items: [], state: dispatchBefore ?? { items: {} } };
     writeAtomic(join(stateDir, id, DISPATCH_FILE), JSON.stringify({ at: now, items: dispatch.items }));
     writeAtomic(dispatchStatePath, JSON.stringify(dispatch.state));

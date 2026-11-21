@@ -263,7 +263,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // (A hold that stays open for 2 h raises a line to Manager in the store, heldWakes: it cannot hide a card for ever.)
   const endPassed = (ref) => {
     const ask = (Array.isArray(view?.asks) ? view.asks : []).find((a) => a && a.id === ref);
-    if (ask) return ask.closed_at != null;
+    if (ask) return ask.closed_at != null || ask.outdated_at != null;
     const k = all.find((x) => x && x.id === ref);
     return !!k && (!!k.dropped || !!k.done_at || phaseOf(ref) === "live");
   };
@@ -339,7 +339,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // #C910: the first card that can start is the first one dispatchItems would not drop. Choosing before its filters let a first card with an open
   // ask, or waiting on someone else, take the agent's only turn and then be dropped: the agent was woken for nothing and its 22 other cards lost theirs.
   const askedCards = new Set();
-  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) askedCards.add(a.card_id);
+  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.outdated_at == null) askedCards.add(a.card_id);
   const decided = openDecisionCards(view, idByNum, lead); // #C1073: a decision open on a thread holds its card as an open ask does
   for (const id of decided) askedCards.add(id);
   const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !heldFor(k, k.who);
@@ -418,7 +418,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // A card with an open ask is waiting for the owner or the lead, not for its agent. Open = not closed and not answered, as on the old
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();
-  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) asked.add(a.card_id);
+  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.outdated_at == null) asked.add(a.card_id);
   for (const id of decided) asked.add(id);
   return { cards, agents, asked, queues };
 }
@@ -564,7 +564,7 @@ export function writeStackQueue(view, { dir, now = Date.now() }) {
 // writer. The Stop hook reads it so a reply whose red line names an ask that is already open does not demand a second one. 1000 numbers at most.
 export const OPEN_ASKS_FILE = "open-asks.json", OPEN_ASKS_MAX = 1000;
 export function openAsksFile(view, now) {
-  const asks = (Array.isArray(view?.asks) ? view.asks : []).filter((a) => a && Number.isInteger(a.num) && a.num > 0 && !a.closed_at && !a.withdrawn_at).map((a) => a.num).sort((a, b) => a - b).slice(-OPEN_ASKS_MAX);
+  const asks = (Array.isArray(view?.asks) ? view.asks : []).filter((a) => a && Number.isInteger(a.num) && a.num > 0 && !a.closed_at && !a.withdrawn_at && !a.outdated_at).map((a) => a.num).sort((a, b) => a - b).slice(-OPEN_ASKS_MAX);
   return { at: now, asks };
 }
 export function writeOpenAsks(view, { dir, now = Date.now() }) {
@@ -588,7 +588,7 @@ export const LANDING_ROLES = /^\s*(?:Checker|Security|Release)\b/i;
 export function landHoldsFile(view, now) {
   const cards = {};
   const asked = new Set();
-  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null) asked.add(a.card_id);
+  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null && a.outdated_at == null) asked.add(a.card_id);
   const all = (Array.isArray(view?.cards) ? view.cards : []).filter((c) => c && typeof c.id === "string" && CARD_ID.test(c.id));
   const ev = view && typeof view.evidence === "object" && view.evidence !== null && !Array.isArray(view.evidence) ? view.evidence : {};
   // #C1391: both group answers come from the one rule (worker/group-rule.mjs groupStage); this file decides nothing about a group from a head, a signed phase or onMain.

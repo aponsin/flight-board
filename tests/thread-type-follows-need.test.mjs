@@ -114,7 +114,8 @@ test("the green chips (Ack, Live) pass 4.5:1 in light and dark", () => {
 
 test("the chip is computed in one place and both chips use it", () => {
   assert.match(page, /function askNeed\(w\)/);
-  assert.match(page, /const nk=askNeed\(w\);\s*const head=`<span class="kind \$\{esc\(nk\)\}">/);
+  // #C1409 restated: an outdated ask draws a red Outdated chip in place of the type chip (const od), every other ask still draws the chip askNeed computed.
+  assert.match(page, /const nk=askNeed\(w\);\s*const od=!!w\.outdated;\s*const head=`\$\{od\?'<span class="kind outdated">Outdated<\/span>':`<span class="kind \$\{esc\(nk\)\}">/);
   assert.match(page, /const nk=ask\?askNeed\(ask\):null;/);
   assert.match(page, /\.kind\.later,\.kind\.conversation\{/);
 });

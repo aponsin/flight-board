@@ -44,7 +44,7 @@ export function viewForTool(view, args = {}) {
   if (args.summary === true) {
     const perRole = {};
     for (const c of view.cards) if (open(c)) { const r = c.owner_role ?? "none"; perRole[r] = (perRole[r] ?? 0) + 1; }
-    const asksOpen = view.asks.filter(openAsk);
+    const asksOpen = view.asks.filter((a) => openAsk(a) && !a.outdated_at); // an outdated ask (#C1409) is owed by no one
     return { ...head(view), summary: true, openCardsByRole: perRole, openCards: Object.values(perRole).reduce((a, b) => a + b, 0), openAsks: asksOpen.length, threads: view.threads?.threads?.length ?? 0, messages: view.threads?.messages?.length ?? 0, hint: "Pass owner_role (a role's open cards, their evidence and its open asks) or thread_id (one thread's messages); with neither, and no summary, you get the whole view (about 5 MB)." };
   }
   return view;

@@ -465,6 +465,9 @@ button.sbtn.sbtn:disabled{opacity:1}
 .cmd code{flex:1;min-width:0;font:400 .82rem/1.4 var(--mono);padding:7px 10px;overflow-x:auto;white-space:pre;color:var(--ink)}
 .cmd .copy{flex:none;font:600 .78rem var(--body);border:0;border-left:1px solid var(--line);background:var(--panel);color:var(--accent);padding:0 12px;cursor:pointer}
 .cmd .copy:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.kind.outdated{background:var(--bad);color:var(--panel)}
+.w-item.outdated .cmd{opacity:.45}
+.outdated-why{margin:6px 0;color:var(--bad);font-size:.88rem}
 .shots{margin:6px 16px 4px 44px;display:flex;flex-direction:column;gap:10px}
 .shot-opt{font:600 .75rem var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:4px}
 .shot-row{display:flex;flex-wrap:wrap;gap:10px}
@@ -872,8 +875,7 @@ function ackOnly(text){return ACK_ONLY.test(String(text||"").trim().replace(/[\s
 // note, or one that only acknowledges, and no files. A choice, a "help" or a note with a question waits for Manager.
 function settled(w){if(!w)return false;if(w.done)return true;const r=w.response;if(!r||(Array.isArray(r.files)&&r.files.length)||!ackOnly(r.note))return false;
   return (w.kind==="answer"&&r.status==="ack")||(w.kind!=="decision"&&r.status==="done")}
-function needsYou(w,now){return !settled(w)&&!answered(w,now)}
-// #C823: a Decision may carry notBefore (the ask's eta_at): until that time it waits on Later, and at the date it moves to Needs you.
+function needsYou(w,now){return !settled(w)&&!answered(w,now)}// #C823: a Decision may carry notBefore (the ask's eta_at): until that time it waits on Later, and at the date it moves to Needs you.
 // #C879 (DATA.md row 19): a Later ask moves to Needs you at its ETA too, with no write in between; one with no date, or only a
 // precondition the probe can't see yet, stays under Later.
 // #C925: a promise (owedBy: Manager's own dated promise to the owner) never waits on the owner, so it stays under Later past its date.
@@ -928,17 +930,23 @@ function typeLine(text){const m=String(text||"").match(/\btype:\s*(\S[^\n]*)/);i
   return (u?u[0].replace(/[.,;:]+$/,""):r)}
 // On a rearm ask (rearm: true), each such step gets the line with a Copy button, as a step's cmd does (the click handler's
 // fallback selects that code).
+// #C1409: a command of a called-off (outdated) ask is drawn greyed with no Copy button, so it can't be run by a click.
+const cmdBlock=(w,t)=>`<div class="cmd"><code>${esc(t)}</code>${w&&w.outdated?"":`<button type="button" class="copy" data-copy="${esc(t)}">Copy</button>`}</div>`;
 const typeCopy=(w,s)=>{const t=w&&w.rearm===true&&!(s&&s.cmd)?typeLine(typeof s==="string"?s:s&&s.text):"";
-  return t?`<div class="cmd"><code>${esc(t)}</code><button type="button" class="copy" data-copy="${esc(t)}">Copy</button></div>`:""};
+  return t?cmdBlock(w,t):""};
+// The reason an ask was called off, and a link to the ask that replaced it.
+function outdatedWhy(w){const o=w&&w.outdated;if(!o)return "";
+  return `<div class="outdated-why">${esc(o.reason||"")}${Number.isInteger(o.replacedBy)?`${o.reason?" ":""}${linkify("Replaced by #T"+o.replacedBy+".")}`:""}</div>`}
 function askHtml(w,open,at=w.since,sub="",qn=null){const steps=Array.isArray(w.steps)?w.steps:[];
    const nk=askNeed(w);
-   const head=`<span class="kind ${esc(nk)}">${qn?qn+". ":""}${esc(ASKLABEL[nk]||nk||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(owedOf(w)?"owes":waitsOn(w.id,Date.now()),owedOf(w))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${!STORE&&waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
+   const od=!!w.outdated;
+   const head=`${od?'<span class="kind outdated">Outdated</span>':`<span class="kind ${esc(nk)}">${qn?qn+". ":""}${esc(ASKLABEL[nk]||nk||"Ask")}</span>`}
+   <div class="w-text">${od?`<div class="w-sub">Called off${w.outdated.by?" by "+esc(w.outdated.by):""}: don't run these.</div>`:""}${threadTag(w.id)}${od?"":badge(owedOf(w)?"owes":waitsOn(w.id,Date.now()),owedOf(w))+lateTag(w.id,Date.now())+pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${!STORE&&waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
-   return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
-   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}${typeCopy(w,s)}</li>`:`<li>${linkify(s&&s.text||"")}${typeCopy(w,s)}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length||answeredAsk(w)?threadHtml(w.id,"wait",{box:answeredAsk(w)||threadState(w.id)==="decision",decide:true,ph:"Add more for Manager"}):""}</details>`}
+   return `<details class="w-item${od?" outdated":""}" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>${outdatedWhy(w)}
+   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}${typeCopy(w,s)}</li>`:`<li>${linkify(s&&s.text||"")}${typeCopy(w,s)}${s&&s.cmd?cmdBlock(w,s.cmd):""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length||answeredAsk(w)?threadHtml(w.id,"wait",{box:answeredAsk(w)||threadState(w.id)==="decision",decide:true,ph:"Add more for Manager"}):""}</details>`}
 // Once the owner has answered an ask, its thread's box is always there to add more (#C386, the owner in t-1793166144265:
 // a chosen decision, with the team, had no box until its thread had a message).
 const answeredAsk=w=>!!(w.response&&w.response.status);
@@ -974,7 +982,9 @@ function queueHtml(asks,item){const qs=asks.filter(w=>!isClick(w)),acts=asks.fil
   // A queue of one is just "1 to do" with no number (Designer); from two, the order is the point.
   const many=acts.length>1;
   return qs.map(w=>item(w)).join("")+(acts.length?`<div class="queue-h" id="queue-h">Your queue · ${acts.length} to do${many?", in this order":""}</div>`+acts.map((w,i)=>item(w,many?i+1:null)).join(""):"")}
-function youCount(now,q){const y=youItems(now,q);return y.asks.length+y.answered.length}
+// #C1409: a called-off (outdated) ask stays listed until the owner closes it, but is no longer owed by him: no count, no red pill.
+const owedAsks=l=>l.filter(w=>!w.outdated);
+function youCount(now,q){const y=youItems(now,q);return owedAsks(y.asks).length+y.answered.length}
 function renderWaiting(){
   const q=qOf("you"),t=Date.now(),{asks,answered:ans}=youItems(t,q);
   const el=$("waiting"),answeredRows=ans.map(id=>threadRow(id,t)).join("");
@@ -1414,7 +1424,7 @@ function replyBox(w){
       narrow?"Anything to add?":"Anything to add? (optional)","other","Send as something else",CMP_HINT.other]
     :w.kind==="decision"?[b("ok","ok","OK")+b("change","","Change something"),narrow?"What should change?":"What should change? (optional)","change","Send",CMP_HINT.change]
     :w.kind==="answer"?[b("ack","ok","Ack"),narrow?"Reply":"Reply to Manager","ack","Send",CMP_HINT.send]
-    :[b("done","ok","Done")+b("help","help","Something went wrong, help"),narrow?"A note (optional)":"A note (optional): what you saw","help","Send",CMP_HINT.help];
+    :[b("done","ok",w.outdated?"Got it":"Done")+b("help","help","Something went wrong, help"),narrow?"A note (optional)":"A note (optional): what you saw","help","Send",CMP_HINT.help];
   return cmpWrap(w.id,`<div class="cchoice btns">${choices}</div>${cmpBox(w.id,"note-"+w.id,{ph,hint,send:b(act,"ok",label," data-csend")})}<div class="msg" id="msg-${id}" role="status"></div>`);
 }
 // #C844: the note box's Send on an action or terminal ask is "help"; a note that only says done, ok or closed (and no files) is Done.
@@ -2141,7 +2151,7 @@ document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext"){ntHas
 const TABS=[["you","Needs you"],["later","Later"],["team","Team notes"],["lead","With the team"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
 let tab="you";
 function tabCounts(now,q=rQuery){const s=threadSets(now,q);
-  return {you:youCount(now,q),later:laterAsks(now,q).length,team:s.team.length,
+  return {you:youCount(now,q),later:owedAsks(laterAsks(now,q)).length,team:s.team.length,
     lead:leadAsks(now,q).length+s.open.length,todo:listOpen("todo").filter(t=>listHit(t,q)).length,ideas:listOpen("ideas").filter(t=>listHit(t,q)).length,
     resolved:resolvedMatches(q,now).length}}
 // Every tab's count is its real total, whatever is typed (#C363; Needs you red when anything waits on the owner).
@@ -2149,7 +2159,7 @@ function tabsHtml(now,active=tab){const c=tabCounts(now,"");
   return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
 // The open tab's matches alone (one list, not six, per key).
 function tabMatches(k,now,q){const s=()=>threadSets(now,q);
-  return k==="you"?youCount(now,q):k==="later"?laterAsks(now,q).length:k==="team"?s().team.length:
+  return k==="you"?youCount(now,q):k==="later"?owedAsks(laterAsks(now,q)).length:k==="team"?s().team.length:
     k==="lead"?leadAsks(now,q).length+s().open.length:k==="todo"||k==="ideas"?listOpen(k).filter(t=>listHit(t,q)).length:resolvedMatches(q,now).length}
 // The search row says a search is on (Designer on f1c9f73): the open tab's matches, and Clear.
 function searchStatus(now){if(!searching())return "";const n=tabMatches(tab,now,rQuery);
@@ -2491,7 +2501,7 @@ function heldLine(i){if(!i)return "";const r=typeof i.blocked==="string"&&i.bloc
   const end=num(i.checkAt)!=null?dayLabel(i.checkAt):typeof i.holdEnd==="string"&&i.holdEnd?i.holdEnd:num(i.holdUntil)!=null?dayLabel(i.holdUntil):"no end set";return "Held: "+r+", until "+end}
 // Waiting on the owner (#C376): an ask tied to the card that the owner hasn't answered. Nobody owes a step meanwhile, so
 // its timers pause (no stall, no "never started", no stale next step, no passed ETA) and the card names the ask.
-function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&!owedOf(w)&&waitsOn(w.id,now)==="you")||cardDecision(i)||null:null}
+function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&!owedOf(w)&&!w.outdated&&waitsOn(w.id,now)==="you")||cardDecision(i)||null:null}
 // What Manager forgot, flagged by the board itself instead of relying on memory.
 function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   if(i.status==="done"){const shipped=(Array.isArray(i.phaseLog)?i.phaseLog:[]).some(e=>e&&e.phase==="ship"&&!e.wait);if(shipped&&!i.shipDetail)g.push("no ship times");return g}

@@ -15,12 +15,12 @@ export function readingInputs(view) {
   const agents = view.evidence?.agents?.value && typeof view.evidence.agents.value === "object" ? view.evidence.agents.value : {};
   const phaseStart = new Map();
   for (const h of view.history ?? []) if (h.kind === "start" && !h.wait && Number.isFinite(h.at)) phaseStart.set(`${h.card_id}|${h.phase}`, Math.max(h.at, phaseStart.get(`${h.card_id}|${h.phase}`) ?? 0));
-  const closedAsks = new Set((view.asks ?? []).filter((a) => a.closed_at).map((a) => a.id)), doneCards = new Set((view.cards ?? []).filter((c) => c.done_at || c.dropped).map((c) => c.id));
+  const closedAsks = new Set((view.asks ?? []).filter((a) => a.closed_at || a.outdated_at).map((a) => a.id)), doneCards = new Set((view.cards ?? []).filter((c) => c.done_at || c.dropped).map((c) => c.id));
   const endsPassed = new Set([...closedAsks, ...doneCards]);
   const reviewers = view.evidence?.reviewers?.value?.reviewers;
   return {
     now, cards, agents, config: reviewers ? { reviewers } : {},
-    ctx: { asks: (view.asks ?? []).filter((a) => !a.closed_at && !a.answered_at && !a.withdrawn_at && a.card_id).map((a) => ({ card_id: a.card_id, num: a.num })), cards: view.cards ?? [], evidence, phaseStart, medians: phaseMedians(view.history), endsPassed },
+    ctx: { asks: (view.asks ?? []).filter((a) => !a.closed_at && !a.answered_at && !a.withdrawn_at && !a.outdated_at && a.card_id).map((a) => ({ card_id: a.card_id, num: a.num })), cards: view.cards ?? [], evidence, phaseStart, medians: phaseMedians(view.history), endsPassed },
     claimsOf: (id) => (Array.isArray(view.reviewClaims) ? view.reviewClaims : []).filter((r) => r && r.card_id === id),
     valueOf,
   };

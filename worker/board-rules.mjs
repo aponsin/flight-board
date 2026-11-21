@@ -623,6 +623,35 @@ export function withdrawRefusal(ask, role) {
   return null;
 }
 
+// #C1409 (the owner: when an ask is called off "your click should become outdated or something, in red so I don't miss it"): Manager calls off a Terminal, Action or
+// Later ask with a reason and an optional replacement ask. The ask stays open until the owner closes it, but he owes nothing on it: isOutdated is the one rule every
+// reader of "waiting on the owner" shares (the SQL readers say `outdated_at IS NULL`).
+export const isOutdated = (ask) => !!ask && ask.outdated_at != null;
+export const OUTDATE_TYPES = ["Terminal", "Action", "Later"];
+export const OUTDATE_REASON_MAX = 300;
+// The replacement ask's number from "#T12", "T12", "12" or 12; null when it is none of these.
+export function replacedByNum(v) {
+  if (v === undefined || v === null) return null;
+  const n = typeof v === "number" ? v : /^#?T?(\d{1,9})$/i.test(String(v).trim()) ? Number(String(v).trim().replace(/^#?T?/i, "")) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+export function outdatedRefusal(ask, who, { reason, replacedBy, replacement } = {}) {
+  if (who !== "Manager") return refuse("outdate-manager-only", `${who ?? "unknown"} cannot call an ask off: Manager's own door does`);
+  if (!ask) return refuse("ask-unknown", "no such ask");
+  if (!OUTDATE_TYPES.includes(ask.type)) return refuse("outdate-type", `${ask.id} is a ${ask.type}: only a Terminal, Action or Later ask is called off`);
+  if (ask.closed_at) return refuse("outdate-closed", `${ask.id} is already closed`);
+  if (ask.answered_at) return refuse("outdate-answered", `${ask.id} is already answered`);
+  if (isOutdated(ask)) return refuse("outdate-already", `${ask.id} is already called off`);
+  const text = typeof reason === "string" ? reason.trim() : "";
+  if (!text || text.length > OUTDATE_REASON_MAX) return refuse("outdate-reason", `reason is 1 to ${OUTDATE_REASON_MAX} characters`);
+  if (replacedBy !== undefined && replacedBy !== null) {
+    const n = replacedByNum(replacedBy);
+    if (n === null) return refuse("outdate-replacement", "replaced_by is an ask number (12, T12 or #T12)");
+    if (!replacement || replacement.num !== n || replacement.id === ask.id) return refuse("outdate-replacement", `${n} is no other ask`);
+  }
+  return null;
+}
+
 // A To-do or Ideas row (the owner's two lists). Words only: a kind (todo or idea, set when it is made), the text, an area, an
 // optional category, a note, a rank, done. No trigger and no ETA: a to-do is not a Later ask.
 const LIST_WORDS = new Set(["id", "kind", "text", "area", "category", "note", "rank", "done"]);
