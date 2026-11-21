@@ -75,7 +75,11 @@ export function packOf(pairs, landing, git, note = null) {
   }
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (holds(pairs[mid])) lo = mid; else hi = mid - 1; }
   out.packed = true;
-  if (Number.isInteger(pairs[lo].n) && pairs[lo].n > 0 && pairs[lo].n < 1e6) out.pack = pairs[lo].n;
-  out.installed = pairs.slice(0, lo + 1).some((p) => p.ran);
+  // #C1402 (11-20: the cards read "pc123 · <owner>" after pc124 replaced pc123, a pair that never ran): `pack` names the pack that carries or carried the card. A pair that never ran and has a
+  // newer pair holding the landing is replaced (make-pair starts each pair's change list at the last pair that ran, so the newer one carries all of it), so: the OLDEST holding pair that ran
+  // is the pack the card rode in; when none ran yet, the NEWEST holding pair is the one to install. (Before, the oldest holder, ran or not.)
+  const held = pairs.slice(0, lo + 1), ranHeld = held.filter((p) => p.ran), named = ranHeld.length ? ranHeld[ranHeld.length - 1] : held[0];
+  if (Number.isInteger(named.n) && named.n > 0 && named.n < 1e6) out.pack = named.n;
+  out.installed = ranHeld.length > 0;
   return out;
 }

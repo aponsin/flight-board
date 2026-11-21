@@ -2677,19 +2677,24 @@ function tileCtx(i){
   {const gr=groupReadyAt(i);if(gr&&num(times[i.phase])!=null)times[i.phase]=Math.min(times[i.phase],Math.max(0,Date.now()-gr))} // #C1358: the clock starts at the group's READY
   return {R,times,skip,paused:i.status==="paused"};
 }
+// #C1402 (the owner, 11-20 7:38 pm MT: a group's Land tile was yellow "pc123 · <owner>" while all three cards' Land tiles were green with the same label): the class of a tile is chosen
+// here, once, from the tile (tileOf/tileAt) and the card's reading, and the card row and the group row both ask it. The group had its own rule that picked green from the phase KEY
+// (Install), the card from the reading's WAIT (install), and a landed card waits for install at Land, Pack or Install alike. Green is only the owner's install, and only a board card has one (#C1300).
+function tileClass(T,R,i){
+  if(T==="future")return "step";
+  if(T==="done")return "step done";
+  if(T==="working")return "step now";
+  if(T==="stuck")return "step now stuck";
+  if(T==="queued")return "step now queued";
+  if(T==="unknown")return "step here";
+  if(T==="ask")return "step waits ask";
+  if(T==="afterwork")return R&&R.wait==="install"&&cardRepo(i)===BOARD_REPO?"step waits rel":"step waits proc";
+  return "step waits proc"}
 function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   const T=paused&&k===R.phase?"unknown":R.noReading?(k===R.phase?"unknown":"future"):tileAt(R,k),here=k===R.phase&&!/^(done|future)$/.test(T);
   if((T==="future"||T==="done")&&skip.includes(k)){if(k==="test")return {pre:"",html:"",skipTest:true};return {pre:"",html:`<div class="step skip" title="${esc(l)}: not needed">${esc(l)}<small>not needed</small></div>`}}
   if(T==="future"){return {pre:"",html:UNLIT_PHASES.includes(k)&&phaseIndex(k)<0?unlitTile(l):`<div class="step" title="${esc(l)}">${esc(l)}<small>&nbsp;</small></div>`}}
-  let c="step",t="";
-  if(T==="done")c+=" done";
-  else if(T==="working")c+=" now";
-  else if(T==="stuck")c+=" now stuck";
-  else if(T==="queued")c+=" now queued";
-  else if(T==="unknown")c+=" here";
-  else if(T==="ask")c+=" waits ask";
-  else if(T==="afterwork")c+=R.wait==="install"&&cardRepo(i)===BOARD_REPO?" waits rel":" waits proc"; // green is only the owner's install, and only a board card has one (#C1300)
-  else c+=" waits proc";
+  let c=tileClass(T,R,i),t="";
   const stale=R.stale===true&&here;
   if(T==="done")t=times[k]?`<small>${dur(times[k])}</small>`:`<small>&nbsp;</small>`;
   else if(T==="working")t=`<small>${esc(R.with||i.who||"")}${times[k]?" · "+dur(times[k]):""}</small>`;
@@ -2927,12 +2932,12 @@ function cardMoveButtons(i,ord){if(!STORE||!isQueued(i))return "";const q=ord.fi
 // #C1383 (one-reading-module step 3, group rows): a group's row is the Worker's `groups` row, `groupReading(members' readings)` of worker/reading.mjs (#C1381): per phase the cards' tile when
 // they agree, else the first tile in that module's TILE_ORDER (stuck, working, unknown, ask, wait, queued, future, afterwork, done). The page no longer reads the classes of drawn card tiles
 // (the rule of #C1343 is kept; where it reads is what changed). The words on a tile are the members' own wait words, shown only where every card in the winning tile says the same thing.
-const GROUP_CLASS={done:"step done",working:"step now",stuck:"step now stuck",unknown:"step here",ask:"step waits ask",wait:"step waits proc",queued:"step now queued",future:"step"};
 const groupDocOf=b=>(state.groups||[]).find(g=>g&&g.batch===b)||null;
 function groupTile(b,k,l,cards,G,f){
   const t=G&&G.tiles&&Object.hasOwn(G.tiles,k)?G.tiles[k]:"future",rs=cards.map(i=>readingOf(i.id)),at=cards.map((i,j)=>tileAt(rs[j],k)),top=cards.filter((i,j)=>at[j]===t),topR=top.map(i=>readingOf(i.id));
-  let cls=t==="afterwork"?(k==="install"&&cardRepo(cards[0])===BOARD_REPO?"step waits rel":"step waits proc"):GROUP_CLASS[t]||"step",small="<small>&nbsp;</small>";
-  const words=[...new Set(topR.map((r,j)=>waitTileWord(top[j],r)))];
+  // #C1402: the group's class is the class of the cards that have this tile (tileClass, the card row's own function); when they differ (a Pack wait and an Install wait are both "afterwork") it is the plain wait, never green.
+  const cl=[...new Set(top.map((i,j)=>tileClass(t,topR[j],i)))];
+  let cls=cl.length===1?cl[0]:tileClass(cl.length?"wait":t,null,cards[0]),small="<small>&nbsp;</small>";  const words=[...new Set(topR.map((r,j)=>waitTileWord(top[j],r)))];
   const ov=[...new Set(topR.map(r=>r.overlay))];
   if(t==="wait"&&ov.length===1&&ov[0]){cls="step waits";small=`<small>${ov[0]==="blocked"?"Blocked":"Paused"}</small>`} // the overlay, as a paused card read in a group before: the blue ring and its word
   else if(t==="wait"||t==="afterwork"||t==="ask"){if(words.length===1&&words[0])small=`<small class="rs">${words[0]}</small>`;else if(cls.includes(" rel"))small=`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`}
