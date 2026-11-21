@@ -94,6 +94,12 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     const noLook = run(P);
     assert.ok(!noLook.ok && /has no LOOK-OK from Designer on this tip/.test(noLook.out), noLook.out);
     git(W, "notes", "--ref=designer", "add", "-f", "-m", "LOOK-OK #C1407: the scratch page", P); git(W, "push", "-q", "-f", "origin", "refs/notes/designer");
+    // Security's L1: a fetch of Designer's ref that fails while ls-remote fails too (a network blip) stops the release; the local copy may lack a newer FINDINGS.
+    const shim = join(D, "shim"); mkdirSync(shim);
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    writeFileSync(join(shim, "git"), `#!/bin/sh\ncase " $* " in *" fetch "*refs/notes/designer*|*" ls-remote "*refs/notes/designer*) echo "fatal: unable to access origin" >&2; exit 128;; esac\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
+    const blip = (() => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), P, "--dry-run"], { env: { ...process.env, PATH: `${shim}:${process.env.PATH}`, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: "v3.51" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } })();
+    assert.ok(!blip.ok && /the fetch of refs\/notes\/designer from origin failed, so the notes may be stale/.test(blip.out), blip.out);
     // #C609: no pack label (no BOARD_PACK, no pack-label file beside the config) is no page: the release refuses.
     const unlabelled = run(P, "");
     assert.ok(!unlabelled.ok && /the page has no pack label: set BOARD_PACK=vN\.NN/.test(unlabelled.out), unlabelled.out);

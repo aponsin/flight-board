@@ -419,7 +419,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     }
     // #C1407: Designer's notes. A ref that is not on origin yet is no note; a fetch that fails while the ref is there stops the release like the others.
     try { git(["fetch", "-q", "origin", `+${DESIGNER_REF}:${DESIGNER_COPY}`]); }
-    catch (e) { if (quiet(["ls-remote", "origin", DESIGNER_REF])) throw new Error(`the fetch of ${DESIGNER_REF} from origin failed, so the notes may be stale: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
+    catch (e) { if (quiet(["ls-remote", "origin", DESIGNER_REF]) !== "") throw new Error(`the fetch of ${DESIGNER_REF} from origin failed, so the notes may be stale: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
     const sha = git(["rev-parse", "--verify", `${commit}^{commit}`]);
     const main = git(["rev-parse", "origin/main"]);
     let notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
