@@ -980,10 +980,12 @@ function youItems(now,q){const s=threadSets(now,q),clicks=threadIds().filter(id=
 // back): the questions (decisions, answers, sessions) come first, in the order asked; the clicks and installs (kind action) follow
 // under a "Your queue" line, numbered in the order he should do them (oldest first, as asked). qn is the number on the ask's label.
 const isClick=w=>w&&w.kind==="action";
-function queueHtml(asks,item){const qs=asks.filter(w=>!isClick(w)),acts=asks.filter(isClick);
+function queueHtml(asks,item){const qs=asks.filter(w=>!isClick(w)),all=asks.filter(isClick);
+  // #C1409 (Checker 2's F1): a called-off click is owed by no one, so it is neither counted nor numbered in his queue; it is listed after it, as it is.
+  const acts=all.filter(w=>!w.outdated),off=all.filter(w=>w.outdated);
   // A queue of one is just "1 to do" with no number (Designer); from two, the order is the point.
   const many=acts.length>1;
-  return qs.map(w=>item(w)).join("")+(acts.length?`<div class="queue-h" id="queue-h">Your queue · ${acts.length} to do${many?", in this order":""}</div>`+acts.map((w,i)=>item(w,many?i+1:null)).join(""):"")}
+  return qs.map(w=>item(w)).join("")+(acts.length?`<div class="queue-h" id="queue-h">Your queue · ${acts.length} to do${many?", in this order":""}</div>`+acts.map((w,i)=>item(w,many?i+1:null)).join(""):"")+off.map(w=>item(w)).join("")}
 // #C1409: a called-off (outdated) ask stays listed until the owner closes it, but is no longer owed by him: no count, no red pill.
 const owedAsks=l=>l.filter(w=>!w.outdated);
 function youCount(now,q){const y=youItems(now,q);return owedAsks(y.asks).length+y.answered.length}
@@ -1230,7 +1232,8 @@ let cbubFor=null;
 // number): its number and title, then whom it waits on, its newest word (who and the first words) and how long ago.
 function threadBubble(id,now=Date.now()){const cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s,n=threadNum(id),t=threadOf(id),last=t[t.length-1];
   const ow=itemOf(id),owes=ow&&ow.coll==="waiting"?owedOf(ow.doc):null;
-  const on=owes&&waitsOn(id,now)==="you"?`${owes} owes you this`:{you:"Waiting on you",lead:"With the team",resolved:"Resolved",answered:"Answered"}[waitsOn(id,now)]||"";
+  // #C1409 (Checker 2's F2): a called-off ask is owed by no one, so its hover says so, not "Waiting on you".
+  const on=ow&&ow.coll==="waiting"&&ow.doc&&ow.doc.outdated?"Called off":owes&&waitsOn(id,now)==="you"?`${owes} owes you this`:{you:"Waiting on you",lead:"With the team",resolved:"Resolved",answered:"Answered"}[waitsOn(id,now)]||"";
   const word=last?`${last.from||""}: ${cut(String(last.text||"").replace(/\s+/g," ").trim(),80)}`:"";
   return `<b>${n?"#T"+n+" ":""}${esc(cut(threadName(id),120))}</b><br>${esc([on,word,last?dur(now-last.at)+" ago":""].filter(Boolean).join(" · "))}`}
 function cbubShow(a){const b=$("cbub");if(!b)return;

@@ -9,7 +9,7 @@ import { loadNames } from "./harness.mjs";
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 
 const T = Date.now();
-const NAMES = ["renderAll", "renderWaiting", "askHtml", "youItems", "tabCounts", "laterAsks", "settled", "needsYou", "resolvedIds"];
+const NAMES = ["renderAll", "renderWaiting", "askHtml", "youItems", "tabCounts", "laterAsks", "settled", "needsYou", "resolvedIds", "threadBubble"];
 const out = (more = {}) => ({ at: T - 6e4, by: "Manager", reason: "No longer needed: the fix shipped.", ...more });
 const term = (id, more = {}) => ({ id, kind: "action", text: "Run the check", since: T - 9e5, steps: [{ text: "1. In Terminal run:", cmd: "npm run board -- --check" }], ...more });
 const rearm = (id, more = {}) => ({ id, kind: "action", rearm: true, text: "Manager can't hear the board", since: T - 9e5, steps: ["1. In the Manager session, type: watch the flight board at the board's address"], ...more });
@@ -138,4 +138,37 @@ test("the reason line is indented like the steps and the expected result is grey
   assert.match(PAGE, /\.w-item\.outdated \.cmd,\.w-item\.outdated \.expect\{opacity:\.45\}/);
   const w = term("a1", { expect: "Installed pc125", outdated: out() });
   assert.match(board([w]).askHtml(w, new Set()), /class="w-item outdated"[\s\S]*<div class="expect">You should see: Installed pc125<\/div>/, "the box is drawn inside the outdated card, so the rule greys it");
+});
+
+// Checker 2's F1: "Your queue · N to do" counts and numbers the owner's clicks only; a called-off click is listed after them, unnumbered.
+test("the queue counts and numbers owed clicks only; a called-off click is listed after them with no number", () => {
+  const live = term("c1"), live2 = term("c2", { since: T - 8e5 }), off = term("o1", { outdated: out(), since: T - 1e6 });
+  const b = board([off, live, live2]);
+  b.renderAll();
+  const html = b.els.waiting.innerHTML;
+  assert.match(html, /Your queue · 2 to do, in this order/, "the called-off click is not counted");
+  assert.equal(b.tabCounts(T, "").you, 2, "and the tab agrees");
+  assert.match(html, /1\. Your click/);
+  assert.match(html, /2\. Your click/);
+  assert.doesNotMatch(html, /3\. /, "never numbered");
+  assert.ok(html.indexOf('data-id="o1"') > html.indexOf('data-id="c2"'), "listed after the queue, as it is");
+  assert.match(html, /<span class="kind outdated">Outdated<\/span>/);
+  const only = board([off, live]);
+  only.renderAll();
+  assert.match(only.els.waiting.innerHTML, /Your queue · 1 to do(?!, in this order)/, "a queue of one has no numbers, with a called-off click beside it");
+  assert.doesNotMatch(only.els.waiting.innerHTML, /1\. Your click/);
+  const none = board([off]);
+  none.renderAll();
+  assert.doesNotMatch(none.els.waiting.innerHTML, /Your queue/, "only a called-off click: no queue line at all");
+  assert.match(none.els.waiting.innerHTML, /Outdated/);
+});
+
+// Checker 2's F2: the #T hover of a called-off ask does not say it waits on the owner.
+test("the thread hover of a called-off ask says Called off, not Waiting on you; an ordinary ask still says it waits", () => {
+  const off = term("o1", { outdated: out(), thread: "o1" }), live = term("c1", { thread: "c1" });
+  const msgs = [{ id: "m1", thread: "o1", from: "Manager", text: "hi", at: T - 1e5 }, { id: "m2", thread: "c1", from: "Manager", text: "hi", at: T - 1e5 }];
+  const b = board([off, live], msgs, [{ id: "o1", num: 5, title: "Old check" }, { id: "c1", num: 6, title: "New check" }]);
+  assert.match(b.threadBubble("o1", T), /#T5 Old check<\/b><br>Called off · Manager: hi/);
+  assert.doesNotMatch(b.threadBubble("o1", T), /Waiting on you/);
+  assert.match(b.threadBubble("c1", T), /Waiting on you/, "control");
 });
