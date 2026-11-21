@@ -46,6 +46,18 @@ test("must still allow: a pause for a build reason, a decision in another sense,
   }
 });
 
+// Security's S1 on f9b5f65d: a run of spaces after "wait" took quadratic time in the first version of the pattern (100k spaces: 7.7 s), and the store puts no length cap on next_note.
+test("the test is linear on long notes: a million spaces, with and without a word before them, answer in well under a second", () => {
+  const long = " ".repeat(1_000_000);
+  for (const note of [`wait${long}`, `waiting for${long}`, `needs${long}the${long}`, `${long}x`, `owne${long}`, `Director's${long}decision`, `wait for a${long}pick`]) {
+    const t0 = performance.now();
+    waitsOnOwner(note);
+    assert.ok(performance.now() - t0 < 500, `${note.slice(0, 20)}: took ${Math.round(performance.now() - t0)} ms`);
+  }
+  assert.equal(waitsOnOwner("waiting for a decision"), true, "the answer on short notes is unchanged");
+  assert.equal(waitsOnOwner(`waiting${" ".repeat(50)}for a decision`), true);
+});
+
 test("only a pause is refused: a blocked card or a plain note that names the owner is written as before, and an unpause is free", () => {
   assert.equal(cardWriteRefusal({ id: "x", blocked_reason: "waits on the owner's decision", next_note: "Waiting on the owner's decision." }, null), null);
   assert.equal(cardWriteRefusal({ id: "x", next_note: "Asked the owner, see the thread." }, null), null);
