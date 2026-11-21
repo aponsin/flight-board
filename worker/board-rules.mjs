@@ -683,6 +683,13 @@ export const typedOther = (answer) => {
 // is bundled without collector/, so the pattern is copied here, not imported.
 export const PROBE_CARD_ID = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/;
 export const PROBE_CARD_ID_MAX = 40;
+// #C1405: whether a next_note says the card waits on the owner: it names the owner (or the owner's name), the owner's decision, pick or choice ("his decision", "your pick", "the owner's choice"), or
+// waits for "a decision" or "a pick" with nobody else named as the one who gives it. A decision of another agent ("waiting for Director's decision", "decision from Manager") and the word in another
+// sense ("the decision recorded in the contract") are not the owner's wait.
+const OTHER_ROLES = "director|manager|checker(?: 2)?|security|designer|release|boardsmith|builder|reviewer|steward|ops|triage|sales|linguist|admin|demos|mainsite";
+const OWNER_FIRST_NAME = ["al", "ex"].join(""); // the owner's name as a word (built, so no file of the public repository carries it)
+const OWNER_WAIT = new RegExp(`\\b(?:the\\s+)?owner(?!_)\\b|\\b${OWNER_FIRST_NAME}\\b|\\b(?:his|your|owner's)\\s+(?:decision|pick|choice|call)\\b|\\b(?:wait(?:s|ing)?|await(?:s|ing)?|needs?)\\s+(?:for\\s+)?(?:a|an|the)?\\s*(?:decision|pick)\\b(?!\\s+(?:from|by|of)\\s+(?:${OTHER_ROLES})\\b)(?!\\s*(?:in|on|recorded|made)\\b)`, "i");
+export const waitsOnOwner = (note) => typeof note === "string" && OWNER_WAIT.test(note) && !new RegExp(`\\b(?:${OTHER_ROLES})(?:'s)?\\s+(?:decision|pick)\\b`, "i").test(note);
 export function cardWriteRefusal(fields, evidence) {
   if (fields === null || typeof fields !== "object" || Array.isArray(fields)) return refuse("card-shape", "card words are an object");
   const typed = Object.keys(fields).filter((k) => CARD_FORBIDDEN.has(k));
@@ -712,6 +719,10 @@ export function cardWriteRefusal(fields, evidence) {
   if (fields.check_at !== undefined && fields.check_at !== null && !(Number.isInteger(fields.check_at) && fields.check_at >= 1577836800000 && fields.check_at <= 4102444800000)) return refuse("card-check", "check_at is a time in milliseconds, or null to lift the hold");
   if ((fields.blocked_reason !== undefined || fields.paused === 1 || fields.paused === true) && !present(fields.next_note)) {
     return refuse("blocked-needs-note", "Blocked or Paused needs a current next_note");
+  }
+  // #C1405 (the owner, 2026-11-20: #C1391 showed "paused" for hours while it waited on his decision and no ask had been posted): a card waiting on the owner is gated on his ask, never paused.
+  if ((fields.paused === 1 || fields.paused === true) && waitsOnOwner(fields.next_note)) {
+    return refuse("paused-waits-on-owner", "a card waiting on the owner is not paused: post the ask first, then set blocked_reason with hold_end = that ask's id, so it reads Gated and sits under Needs you");
   }
   // #C902: done closes a card whose work leaves no branch (a review, a file). Only true (closing), always with its evidence, never with dropped.
   if (fields.done !== undefined || fields.done_evidence !== undefined) {

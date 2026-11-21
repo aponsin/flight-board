@@ -24,7 +24,7 @@ const seed = async (extra = {}) => {
   assert.equal((await createCard(db, T - 5 * MIN, "Manager", { id: "c1", title: "A card", owner_role: "Builder", ...extra })).ok, true);
   return db;
 };
-const paused = { paused: 1, hold_end: "c0", next_note: "waiting on the owner" };
+const paused = { paused: 1, hold_end: "c0", next_note: "paused until the card it follows closes" }; // #C1405: a pause that waits on the owner is refused now (gated on his ask instead), so the fixture's reason is a card's
 
 test("a paused card whose repository phase is checker reads paused with the still ring, not blue", async () => {
   const db = await seed(paused);
