@@ -92,6 +92,30 @@ test("a repository whose read failed, or whose list may be cut, is left out; not
   assert.equal(await prsStep({ ...h.args, deadline: 0, clock: () => 1 }), null, "past the job's deadline no gh runs");
 });
 
+// Checker 2 on 94e18d62: the two guards below each passed the whole suite when removed.
+test("more than 400 open pull requests in all are not carried (400 are), and nothing is written", async () => {
+  const nums = (n) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ number: i + 1 })));
+  const config = JSON.stringify({ collector: { repoPath: "/w/a", repos: [{ path: "/w/b" }, { path: "/w/c" }] } });
+  const run = (sizes) => harness({ config, answers: { "/w/a": { repo: "o/a", pr: nums(sizes[0]) }, "/w/b": { repo: "o/b", pr: nums(sizes[1]) }, "/w/c": { repo: "o/c", pr: nums(sizes[2]) } } });
+  const ok = run([134, 133, 133]);
+  assert.equal((await prsStep(ok.args)).open.length, 400, "400 is the most carried");
+  assert.equal(ok.posts.length, 1);
+  const over = run([134, 134, 133]);
+  assert.equal(await prsStep(over.args), null, "401 each under the per-repository cap, over the total");
+  assert.deepEqual(over.posts, []);
+  assert.ok(over.logs.some((l) => /too many open pull requests/.test(l)));
+});
+
+test("two folders of one repository list its pull requests once", async () => {
+  const config = JSON.stringify({ collector: { repoPath: "/w/one", repos: [{ path: "/w/two" }] } });
+  const same = { repo: "example/sites", pr: '[{"number":1},{"number":2}]' };
+  const h = harness({ config, answers: { "/w/one": same, "/w/two": same } });
+  const v = await prsStep(h.args);
+  assert.deepEqual(v.repos, ["example/sites"]);
+  assert.deepEqual(v.open, ["example/sites#1", "example/sites#2"]);
+  assert.equal(prsShape(v), true);
+});
+
 test("the usage job runs the step after the truth check and before the Actions step", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../collector/probe-evidence.mjs", import.meta.url), "utf8");
