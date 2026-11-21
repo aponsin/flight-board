@@ -697,8 +697,13 @@ export const PROBE_CARD_ID_MAX = 40;
 // sense ("the decision recorded in the contract") are not the owner's wait.
 const OTHER_ROLES = "director|manager|checker(?: 2)?|security|designer|release|boardsmith|builder|reviewer|steward|ops|triage|sales|linguist|admin|demos|mainsite";
 const OWNER_FIRST_NAME = ["al", "ex"].join(""); // the owner's name as a word (built, so no file of the public repository carries it)
-const OWNER_WAIT = new RegExp(`\\b(?:the\\s+)?owner(?!_)\\b|\\b${OWNER_FIRST_NAME}\\b|\\b(?:his|your|owner's)\\s+(?:decision|pick|choice|call)\\b|\\b(?:wait(?:s|ing)?|await(?:s|ing)?|needs?)\\s+(?:for\\s+)?(?:(?:a|an|the)\\s+)?(?:decision|pick)\\b(?!\\s+(?:from|by|of)\\s+(?:${OTHER_ROLES})\\b)(?!\\s*(?:in|on|recorded|made)\\b)`, "i");
-export const waitsOnOwner = (note) => typeof note === "string" && OWNER_WAIT.test(note) && !new RegExp(`\\b(?:${OTHER_ROLES})(?:'s)?\\s+(?:decision|pick)\\b`, "i").test(note);
+// A note that names the owner outright (the owner, his name, his or your decision, "you to pick", "until you decide") is the owner's wait whatever else it says ("the owner, then Director's decision").
+// "code owner of ..." and the field name owner_role are the word in another sense.
+const OWNER_NAMED = new RegExp(`(?<!code\\s)\\b(?:the\\s+)?owner(?!_)\\b(?!\\s+of\\b)|\\b${OWNER_FIRST_NAME}\\b|\\b(?:his|your|owner's)\\s+(?:decision|pick|choice|call)\\b|\\byou(?:\\s+to)?\\s+(?:decide|pick|choose|say|answer|confirm|approve)\\b`, "i");
+// A bare wait for "a decision" or "a pick" (on it, in a thread, ...) is the owner's unless it says another role gives it.
+const BARE_DECISION_WAIT = new RegExp(`\\b(?:wait(?:s|ing)?|await(?:s|ing)?|needs?)\\s+(?:(?:for|on)\\s+)?(?:(?:a|an|the)\\s+)?(?:decision|pick)\\b(?!\\s+(?:from|by|of)\\s+(?:${OTHER_ROLES})\\b)`, "i");
+const OTHER_ROLE_DECISION = new RegExp(`\\b(?:${OTHER_ROLES})(?:'s)?\\s+(?:decision|pick)\\b`, "i");
+export const waitsOnOwner = (note) => typeof note === "string" && (OWNER_NAMED.test(note) || (BARE_DECISION_WAIT.test(note) && !OTHER_ROLE_DECISION.test(note)));
 export function cardWriteRefusal(fields, evidence) {
   if (fields === null || typeof fields !== "object" || Array.isArray(fields)) return refuse("card-shape", "card words are an object");
   const typed = Object.keys(fields).filter((k) => CARD_FORBIDDEN.has(k));
