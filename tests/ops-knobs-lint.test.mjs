@@ -33,7 +33,6 @@ export const FIXED = {
   "collector/week-usage.mjs:SESSION_WEEK_FRESH_MS": "how old a session's weekly-usage post may be and still count (1 h): a reading window on a session's own report, read on the Mac by the collector, which has no posted settings; tuning it is its own card",
   // #C1113 slice 5: the collector's reading windows, run limits and fixed facts (group B), and two write-validity windows (group C).
   "collector/actions-usage.mjs:HOSTED_USD_PER_MIN": "GitHub's published price for a hosted runner minute ($0.008): a price, not an operating number",
-  "collector/derive.mjs:ABANDON_MS": "after this long with no evidence a plain build start counts as closed (30 min, #C654): a reading rule on the derived card, not a cadence; tuning it is its own card",
   "collector/probe-board.mjs:SEND_TIMEOUT_MS": "the probe's send timeout (25 s): tied to the ask job's own 30 s limit, which the launchd plist holds; changing it needs an owner install",
   "collector/probe-evidence.mjs:E2E_EVERY_MS": "how often the probe asks for the product's daily test run (30 min): a cost bound on gh reads inside the usage job's 5-minute cadence, not a setting",
   "collector/probe-evidence.mjs:E2E_STALE_MS": "how old the kept e2e answer may be before it is written as unknown (2 h): a reading window on the evidence, well over E2E_EVERY_MS",
