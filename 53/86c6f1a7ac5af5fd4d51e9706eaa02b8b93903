@@ -1,0 +1,1 @@
+SECURE: board-polish-fifteen head (#C1389, #C1390, #C1393), linear on main b64e1884 with no merges; range-diff against my signed 94e18d62 shows only Checker 2's F1 in gate/stop.mjs and new tests. No secret, binding, migration or auth change. Full suite 3732 pass, 1 skip, 0 fail. gate/stop.mjs changes, so the pack re-pins the hooks. Security 2026-11-20.
