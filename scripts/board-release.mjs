@@ -30,7 +30,7 @@ import { OWNER_ENTRIES, TASK_FILE, importClosure, pinnedCommit, linkedCommit } f
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { packLabel } from "./pack-label.mjs";
 import { GROUP_MAX, ROLE_WORD, roleLineBase, roleUnsigned, lineBase } from "./self-deploy-gate.mjs";
-import { isSignoff } from "../collector/signoff.mjs";
+import { isSignoff, designerFacts, designerRefusals, DESIGNER_REF, DESIGNER_COPY } from "../collector/signoff.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 // The release tool and what it runs are the owner's (Security: a release can't loosen the next one). #C1058 (the owner chose A on #T1992, 2026-11-17, replacing
@@ -351,8 +351,10 @@ export function parseTrailerLog(text) {
 export function untrailered(commits) {
   return (Array.isArray(commits) ? commits : []).filter((c) => !(Array.isArray(c?.ids) && c.ids.some((id) => CARD_ID_SHAPE.test(String(id))))).map((c) => String(c?.sha ?? ""));
 }
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [], carrySuite = null, coverage = null }) {
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [], carrySuite = null, coverage = null, designer = null }) {
   const r = [];
+  // #C1407: Designer's note on the tip: FINDINGS refuses it, and a change to page/ needs Designer's LOOK-OK (collector/signoff.mjs designerRefusals). `designer` is null for a caller that reads no designer facts.
+  r.push(...designerRefusals(designer));
   // #C1026: a carried sign-off is only as good as the suite on the re-cut tip itself; carrySuite is null when nothing was carried, "" when it passed, else why not.
   if (carrySuite) r.push(`the commit carries a sign-off from the commit it was cut from, and the full suite on it is not green: ${carrySuite}`);
   if (noTrailer.length) r.push(`${noTrailer.length === 1 ? "a commit has" : `${noTrailer.length} commits have`} no Board-Id trailer naming a card: ${noTrailer.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}${noTrailer.length > 5 ? ", ..." : ""} (the probe finds a landed card by it: add "Board-Id: <card id>" and sign again)`);
@@ -415,6 +417,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       try { git(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]); }
       catch (e) { throw new Error(`the fetch of ${ref} from origin failed, so the notes may be stale: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
     }
+    // #C1407: Designer's notes. A ref that is not on origin yet is no note; a fetch that fails while the ref is there stops the release like the others.
+    try { git(["fetch", "-q", "origin", `+${DESIGNER_REF}:${DESIGNER_COPY}`]); }
+    catch (e) { if (quiet(["ls-remote", "origin", DESIGNER_REF])) throw new Error(`the fetch of ${DESIGNER_REF} from origin failed, so the notes may be stale: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
     const sha = git(["rev-parse", "--verify", `${commit}^{commit}`]);
     const main = git(["rev-parse", "origin/main"]);
     let notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
@@ -479,7 +484,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
     const capabilities = pageCapabilities(at(sha)(PAGE_FILE)), mcpErrors = pageMcpErrors(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, coverage, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer, carrySuite,
+      forward, notes, coverage, designer: designerFacts({ quiet, main, tip: sha }), pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer, carrySuite,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),

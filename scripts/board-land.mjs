@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 // Checker 2's F2 LOW on 81d976c4: a static import, so importClosure pins worker/probe-jobs.mjs with this RELEASE_ENTRY (the land numbers are the owner's).
 import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC, LAND_SUITE_SEC } from "../worker/probe-jobs.mjs";
 import { pinnedCommit } from "./current.mjs";
-import { isSignoff } from "../collector/signoff.mjs";
+import { isSignoff, designerFacts, designerRefusals, DESIGNER_REF, DESIGNER_COPY } from "../collector/signoff.mjs";
 // #C1146: the group check (Checker's read of the files two or more cards touch, and one suite run on the head) before a head of two or more cards lands.
 import { GROUP_NOTE_REF, groupFacts, groupVerdict, runGroupSuite, suiteOnSnapshot } from "./group-check.mjs";
 
@@ -87,6 +87,10 @@ export function landPlan({ heads, holds, now }) {
     if (h.dataLines === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its change to ${DATA_FILE} could not be read` }); continue; }
     if (Number.isInteger(h.dataLines) && h.dataLines > 0 && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it adds a dated line to ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`] }); continue; }
     if (!h.forward) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: ["it doesn't continue origin/main: rebase it on main and sign it again"] }); continue; }
+    // #C1407: Designer's note (refs/notes/designer): FINDINGS on the tip, or a change to page/ with no LOOK-OK, is a refusal Release must see, not a tip to try. A head with no designer facts (an older caller)
+    // asks nothing more here; the release tool's dry run reads them itself and is the check that decides.
+    const dr = designerRefusals(h.designer);
+    if (dr.length) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: dr }); continue; }
     // #C1146: a head of two or more cards also needs the group check on this exact commit: Checker's read of the files two or more cards touch (a note), then one suite run (the
     // job makes it before the release tool's dry run, once per sha). Facts that were not read (no `group`) are a wait, never a pass.
     const g = groupVerdict({ cards, ...(h.group ?? {}) });
@@ -243,6 +247,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     quiet(["fetch", "-q", "origin"]);
     for (const [who, ref] of Object.entries(NOTES)) quiet(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]);
     quiet(["fetch", "-q", "origin", `+${GROUP_NOTE_REF}:refs/notes/board-release/group`]);
+    quiet(["fetch", "-q", "origin", `+${DESIGNER_REF}:${DESIGNER_COPY}`]);
     const suites = readJson(join(dir, "group-check.json")) ?? {};
     const main = git(["rev-parse", "origin/main"]);
     const heads = (quiet(["for-each-ref", "refs/remotes/origin/build", "--format=%(refname:lstrip=3) %(objectname)"]) ?? "").split("\n").filter(Boolean).map((l) => {
@@ -252,7 +257,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const dataLines = addedDatedLines(quiet(dataDiffArgs(main, sha)));
       // #C1146: only a head of two or more cards is read for the group check (the git read is skipped for the rest).
       const group = groupFacts({ cards, quiet, main, sha, suites });
-      return { branch, sha, notes, cards, dataLines, group, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
+      return { branch, sha, notes, cards, dataLines, group, designer: designerFacts({ quiet, main, tip: sha }), onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
     });
     return { main, heads };
   };

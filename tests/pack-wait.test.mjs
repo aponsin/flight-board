@@ -72,7 +72,9 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     const sign = (sha, checker = "PASS Quick") => { git(W, "notes", "--ref=checker", "add", "-f", "-m", checker, sha); git(W, "notes", "--ref=security", "add", "-f", "-m", "SECURE", sha); };
     const Sx = commit("gate/tools.mjs", "the pack"); sign(Sx);
     const P = commit("page/board.template.html", "a page"); sign(P);
-    git(W, "push", "-q", "origin", "refs/notes/checker", "refs/notes/security");
+    // #C1407 restated: the page release P changes page/, so the gate wants Designer's LOOK-OK on it (the newer pack P2 on it changes no page file and rides on that LOOK-OK).
+    git(W, "notes", "--ref=designer", "add", "-f", "-m", "LOOK-OK #C1407: the scratch page", P);
+    git(W, "push", "-q", "origin", "refs/notes/checker", "refs/notes/security", "refs/notes/designer");
     const H = join(D, "home"), cfg = join(H, "board.config.json");
     mkdirSync(join(H, ".claude"), { recursive: true });
     const conf = JSON.parse(readFileSync(join(REPO, "board.config.example.json"), "utf8"));
@@ -84,6 +86,14 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     const good = run(P);
     assert.ok(good.ok, good.out);
     assert.match(good.out, new RegExp(`pinned changes since ${B.slice(0, 12)} are the waiting pack's only: ${Sx.slice(0, 12)}, signed`));
+    // #C1407: the CLI reads Designer's note from origin: FINDINGS on P refuses it, no note on a page change refuses it, and the LOOK-OK puts it back.
+    git(W, "notes", "--ref=designer", "add", "-f", "-m", "FINDINGS #C1407: the scratch page", P); git(W, "push", "-q", "-f", "origin", "refs/notes/designer");
+    const designerFindings = run(P);
+    assert.ok(!designerFindings.ok && /Designer's FINDINGS note stands on this tip/.test(designerFindings.out), designerFindings.out);
+    git(W, "notes", "--ref=designer", "remove", P); git(W, "push", "-q", "-f", "origin", "refs/notes/designer");
+    const noLook = run(P);
+    assert.ok(!noLook.ok && /has no LOOK-OK from Designer on this tip/.test(noLook.out), noLook.out);
+    git(W, "notes", "--ref=designer", "add", "-f", "-m", "LOOK-OK #C1407: the scratch page", P); git(W, "push", "-q", "-f", "origin", "refs/notes/designer");
     // #C609: no pack label (no BOARD_PACK, no pack-label file beside the config) is no page: the release refuses.
     const unlabelled = run(P, "");
     assert.ok(!unlabelled.ok && /the page has no pack label: set BOARD_PACK=vN\.NN/.test(unlabelled.out), unlabelled.out);
