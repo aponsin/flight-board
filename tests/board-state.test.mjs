@@ -365,7 +365,10 @@ test("the probe: a card on a scratch repository: its tip, sign-offs, main, CI; o
   // reviews: the note was written just now (real git dates), so only its shape is asserted; the rest is exact.
   const { reviews, ...read } = cardState(card, repo, config, T);
   assert.deepEqual(Object.keys(reviews), ["checker"]); assert.ok(Number.isInteger(reviews.checker) && reviews.checker > 1_577_836_800_000);
-  assert.deepEqual(read, { num: 420, phase: "security", headSha: sha, headBranch: "board-state-probe", headSha12: sha.slice(0, 12), signed: ["checker"], onMain: false, ci: "running", ciMin: 4, liveVersion: null, seen: ["build", "checker"], readyAt: T, headAt: T, waitingFor: ["security"], at: T });
+  // #C1397: issueBase is the merge-base of main and the tip (here main's own commit).
+  const { issueBase, ...rest } = read;
+  assert.equal(issueBase, git(["rev-parse", "main"]).trim());
+  assert.deepEqual(rest, { num: 420, phase: "security", headSha: sha, headBranch: "board-state-probe", headSha12: sha.slice(0, 12), signed: ["checker"], onMain: false, ci: "running", ciMin: 4, liveVersion: null, seen: ["build", "checker"], readyAt: T, headAt: T, waitingFor: ["security"], at: T });
   assert.deepEqual(cardState({ ...card, phase: "Whatever Alice said" }, null, config, T).phase, null, "a declared phase not in the config leaves as nothing");
 });
 

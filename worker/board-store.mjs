@@ -1267,10 +1267,13 @@ export async function writeEvidence(db, now, who, key, value, track) {
   const cardRow = await db.prepare("SELECT owner_role, repo, waiting_on, blocked_reason FROM cards WHERE id = ?").bind(cardId).first();
   const agents = (await evidenceOf(db, "agents")) ?? {}, ownerRole = cardRow?.owner_role;
   // #C1114: the counters the probe counted from the review notes raise the card's issues (raisedIssues: never lower, never double).
-  if (cardRow && sent.issueCounts) {
+  // #C1397: when the probe's issueBase (the merge-base the counts were read from) differs from the one in the card's previous reading, the range changed: the review kinds are
+  // set to this range's counts (an absent issueCounts is the range with none). No previous issueBase (a card not yet carrying it): raise only, as before.
+  const rangeChanged = typeof sent.issueBase === "string" && typeof before?.issueBase === "string" && sent.issueBase !== before.issueBase;
+  if (cardRow && (sent.issueCounts || rangeChanged)) {
     const stored = await db.prepare("SELECT issues FROM cards WHERE id = ?").bind(cardId).first();
     let have = null; try { have = stored?.issues ? JSON.parse(stored.issues) : null; } catch { /* none */ }
-    const up = raisedIssues(have, sent.issueCounts);
+    const up = raisedIssues(have, sent.issueCounts ?? {}, rangeChanged);
     if (up) await db.prepare("UPDATE cards SET issues = ?, issues_at = ?, updated_at = ? WHERE id = ?").bind(JSON.stringify(up), now, now, cardId).run();
   }
   // #C1110: a branch that touches the customer-text paths sets the card's flag; only ever raised (null or 0 becomes 1), never cleared.

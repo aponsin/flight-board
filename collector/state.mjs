@@ -855,9 +855,12 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const behindMain = asksBehind && behindAns === false;
   const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
   // #C1114: the findings every review has put on the branch's commits (not only the tip's), counted by kind; the Worker raises the card's counters to these.
+  // #C1397: issueBase is the merge-base of main and the tip (the start of the range counted), sent only when both reads worked; the Worker sets the counters to this range's counts when it differs from the last one.
+  let issueBase = null;
   const issueCounts = (() => {
     if (bare || onMain || !repo.notes || typeof repo.git !== "function" || !/^[0-9a-f]{40}$/.test(String(tip.sha))) return {};
-    let shas = []; try { shas = String(repo.git(["rev-list", "--max-count=60", `${mainRef}..${tip.sha}`])).split("\n").map((l) => l.trim()).filter((s) => /^[0-9a-f]{40}$/.test(s)); } catch { /* none */ }
+    let shas = [], listed = false; try { shas = String(repo.git(["rev-list", "--max-count=60", `${mainRef}..${tip.sha}`])).split("\n").map((l) => l.trim()).filter((s) => /^[0-9a-f]{40}$/.test(s)); listed = true; } catch { /* none */ }
+    if (listed) { try { const b = String(repo.git(["merge-base", mainRef, tip.sha])).trim(); if (/^[0-9a-f]{40}$/.test(b)) issueBase = b; } catch { /* unread: no base sent */ } }
     return countFindings(shas.flatMap((s) => notesOn(s)));
   })();
   // #C1139 (Checker 2, 11-16 late: the dispatch woke it for #C1124 at 8224f95d and #C1065 at d664bc97, each a single empty "WIP: branch pushed before the first edit" commit with no READY):
@@ -874,6 +877,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
+    ...(issueBase ? { issueBase } : {}),
     ...(customerText ? { customerText: true } : {}),
     ...(behindMain ? { behindMain: true } : {}),
     ...(unread.size && typeof repo.git === "function" ? { unread: [...unread].sort() } : {}),

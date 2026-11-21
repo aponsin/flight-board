@@ -658,11 +658,20 @@ export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner", "
 // #C1114: the counters the probe read from the review notes (reading.issueCounts: bugs, security, language, design) raise the card's stored `issues`: each kind
 // becomes the larger of the stored number and the read one, so a later PASS, the same note read again, or a hand-typed number above the read one never lowers
 // or doubles anything. `owner` is only ever typed. Returns the new counts, or null when nothing rises (or the reading is no counts).
-export function raisedIssues(stored, read) {
+// #C1397: with `replace` (the card's range changed: a re-cut onto another base, or its stack base landed on main) the four review kinds are SET to the read ones (a kind
+// the range has none of is removed), so findings of commits no longer in the range stop counting; `owner` and `release` are never touched. Same range: only rises, as above.
+export function raisedIssues(stored, read, replace = false) {
   if (!read || typeof read !== "object" || Array.isArray(read)) return null;
   const have = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
   const out = { ...have };
   let rose = false;
+  if (replace) {
+    for (const k of ["bugs", "security", "language", "design"]) {
+      const n = read[k], want = Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
+      if (want === null) { if (k in out) { delete out[k]; rose = true; } } else if (out[k] !== want) { out[k] = want; rose = true; }
+    }
+    return rose ? out : null;
+  }
   for (const k of ["bugs", "security", "language", "design"]) {
     const n = read[k];
     if (!Number.isInteger(n) || n < 1 || n > 99) continue;

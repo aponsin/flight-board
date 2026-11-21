@@ -64,7 +64,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "headAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "headAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "issueBase", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
 // #C1387: the sources a card's reading can fail to read (a git or GitHub call that failed, which is not the answer "no"). A new source is one word added here (and to UNKNOWN_BY in worker/reading.mjs
 // when the phase rests on it); #C1395 adds notes, install, pair (each a source a phase rests on: the Worker reads them as unknown) and ci (a flag: the card's own ci word and the ship tile say it).
 export const UNREAD_SOURCES = ["main", "deploy", "version", "stack", "start", "behind", "notes", "install", "pair", "ci"];
@@ -99,6 +99,8 @@ const CARD = {
   findings: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
   // #C1114: the findings the reviews put on the branch's commits, by kind (collector/findings-count.mjs); the Worker raises the card's counters to these.
   issueCounts: (v) => plain(v) && Object.keys(v).length >= 1 && Object.entries(v).every(([k, n]) => ["bugs", "security", "language", "design"].includes(k) && Number.isInteger(n) && n >= 1 && n <= 99),
+  // #C1397: the merge-base of main and the tip (the start of the range issueCounts was counted over); when it changes the Worker sets the card's counters to the new range's counts instead of only raising them.
+  issueBase: re(/^[0-9a-f]{40}$/),
   // #C1110: the branch touches the repository's customer-text paths (only ever true); the Worker sets the card's customer_text and never clears it.
   customerText: (v) => v === true,
   // #C854: a tip waiting at ship that does not continue main (only ever true): it goes back to its builder to re-cut.
