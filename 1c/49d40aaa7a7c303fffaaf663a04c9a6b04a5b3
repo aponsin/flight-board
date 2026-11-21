@@ -1,0 +1,1 @@
+SECURE: #C1405 v2 head, re-cut of 10f53166 (range-diff '=': same patch), linear on main 9081879a, no merges. waitsOnOwner's three linear regexes as reviewed on 10f53166 (1-2M char notes under 6 ms); no route, binding or secret. The WIP start commit e0a655b3 is dropped. Security 2026-11-20.
