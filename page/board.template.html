@@ -3434,9 +3434,6 @@ function fromSteps(i){
   const ra=num((derivedOf(i.id)||{}).readyAt);if(ra!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&ra>=en.start){en.end=ra;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
   // #C655: a build step left open ends where main's ship commit for the card says it shipped (the probe's shippedAt), as a derived end.
   const sh=num((derivedOf(i.id)||{}).shippedAt);if(sh!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&sh>=en.start){en.end=sh;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
-  // #C654/#C655: a plain build start the probe closed as abandoned (no commit, no branch, the agent not on the card after 30
-  // minutes) ends where it says, and is not a finished build: the card goes back to "up next" with the grey note below.
-  const aa=num((derivedOf(i.id)||{}).abandonedAt);if(aa!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&aa>=en.start){en.end=aa;en.derived=true;en.abandoned=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
   out.phaseLog=(Array.isArray(i.phaseLog)?i.phaseLog:[]).concat(log);
   if(out.status!=="done"){
     // Current phase: one someone is working on now (an open step), else the first needed phase nobody has finished.
@@ -3449,9 +3446,9 @@ function fromSteps(i){
     // #C655: work seen is the evidence (a commit head, a branch, the live state, a commit on main citing the card). A plain build
     // start with none of it is a start logged and nothing more: its time is noWork, and the strip draws it grey.
     const dd=derivedOf(i.id)||{},seenWork=!!(dd.head||dd.workSeen||(typeof i.branch==="string"&&i.branch)||liveBuilding(i.id));
-    const lone=opens.filter(e=>e.phase===BUILD_PHASE).pop()||log.filter(e=>e.abandoned).pop();
+    const lone=opens.filter(e=>e.phase===BUILD_PHASE).pop();
     if(lone&&!seenWork)out.noWork=lone.start;
-    const finished=new Set(work.filter(e=>e.end!=null&&!e.abandoned).map(e=>e.phase));
+    const finished=new Set(work.filter(e=>e.end!=null).map(e=>e.phase));
     const from=work.length?Math.min(...work.map(e=>phaseIndex(e.phase))):0;
     const held=log.filter(e=>e.wait&&e.end==null).pop();
     if(working){out.phase=working.phase;out.who=working.who;out.status="active";if(working.phase==="ship")out.shipAt=working.start}

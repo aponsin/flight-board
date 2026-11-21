@@ -1,0 +1,1 @@
+- `page/board.template.html` stops reading the dead `abandonedAt` (page-drops-abandonedat-read, #C1401; nothing writes it since #C1393): the phase log's `abandoned` mark and the two lines that read it (the lone-build `noWork` and the finished-phase set) go with it, and a test fails if the page names it again. A page change: it ships with the next pack. No DATA.d line.
