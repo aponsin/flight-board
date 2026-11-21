@@ -19,7 +19,7 @@ const ids = ["a", "b", "c"], cards = ids.map((id, k) => raw(id, k + 1));
 const hovers = (html) => [...html.matchAll(/<div class="step[^"]*" title="([^"]*)">/g)].map((m) => m[1]);
 const counted = (html) => hovers(html).map((t) => /^([^:]+): (\d) of 3 cards (.+)$/.exec(t)).filter(Boolean).map((m) => ({ label: m[1], n: Number(m[2]), phrase: m[3] }));
 
-const PLAIN = new Set(["done", "working", "stuck", "not read yet", "waiting on you", "waiting", "queued", "not started yet", "waiting for pack or install", "waiting for pack", "waiting for install", "waiting for deploy"]);
+const PLAIN = new Set(["done", "working", "stuck", "not read yet", "waiting on you", "waiting", "queued", "not started yet", "waiting for pack or install", "waiting for pack", "waiting for install", "waiting for deploy", "sent back"]); // #C1406 restated: "sent back" is a plain word a card's own pill uses (a group tile of sent-back cards)
 const RAW = ["afterwork", "future", "unknown", "ask", "wait"]; // the tile names that are not plain words (done, working, stuck, queued are words a card's tile shows too)
 
 test("Designer's two cases: one card waiting for install among three reads 'waiting for install', one not started reads 'not started yet'", () => {
