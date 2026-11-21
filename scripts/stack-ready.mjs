@@ -18,6 +18,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DATA_FILE, FOLD_CARD, dataDiffArgs, addedDatedLines } from "./board-land.mjs";
+import { stageRank, sameRepo } from "../worker/group-rule.mjs"; // #C1391: the one group stage (the queue file carries each card's `stage`)
 
 export const SIGNAL_REF = "refs/notes/stack-ready";
 // #C1066 (Checker 2's M1 on 34f1dbaa): a card that ran stack-ready and was told to wait ("more queued" or "waiting for its group") leaves a note on that head in this ref. The probe
@@ -122,10 +123,11 @@ export function stackReady({ run, queue = null, now = () => new Date().toISOStri
       && Array.isArray(k.dependsOn) && k.dependsOn.includes(id)).map((k) => String(k.id)) : [];
     const wait = () => { tryOut(["fetch", "-q", "origin", `+${WAITING_REF}:${WAITING_REF}`]); const w = tryOut(["notes", `--ref=${WAITING_REF}`, "add", "-f", "-m", `stack-ready-waiting\n${now()}`, "HEAD"]); if (typeof w !== "object") tryOut(["push", "origin", `${WAITING_REF}:${WAITING_REF}`]); };
     if (queued.length) { wait(); return { branch, sha, signal: false, queued, line: `STACK-READY OK: pushed ${branch} at ${at12}, more queued (${queued.join(", ")}): no signal` }; }
-    // #C1021: a card of a batch (a group) is ready only when every open card of that batch is built: the batch is one review and one pack. Any builder,
-    // the same repository. The lead pulls a card out of its batch (clears the batch) to send it alone.
+    // #C1021, #C1391: a card of a batch (a group) is ready only when every OTHER counted member of the batch (open, any builder, the same repository, a paused or blocked one included) is
+    // `built` or later: the batch is one review and one pack. The stage is the queue file's (worker/group-rule.mjs stageOf); a queue file with no stage gives the waiting note, never a signal.
+    // The lead pulls a card out of its batch (clears the batch) to send it alone.
     const batch = typeof me?.batch === "string" ? me.batch : "";
-    const waiting = batch ? queue.cards.filter((k) => k && k.id !== id && k.batch === batch && k.repo === me.repo && k.started === false && k.held !== true).map((k) => String(k.id)) : [];
+    const waiting = batch ? queue.cards.filter((k) => k && k.id !== id && k.batch === batch && sameRepo(k.repo, me.repo) && !(stageRank(k.stage) >= stageRank("built"))).map((k) => String(k.id)) : [];
     if (waiting.length) { wait(); return { branch, sha, signal: false, queued: waiting, line: `STACK-READY OK: pushed ${branch} at ${at12}, waiting for its group ${batch} (${waiting.join(", ")} not built): no signal` }; }
   }
   // The notes ref is shared by every READY: take what the remote has first, or this checkout's fresh ref would be refused as not a fast-forward.

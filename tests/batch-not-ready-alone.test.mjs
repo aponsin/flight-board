@@ -27,7 +27,8 @@ function fakeGit(id = "card-a") {
   // the signal note only: a card told to wait writes a waiting note (#C1066, refs/notes/stack-ready-waiting), which is no signal
   return { run, calls, wroteNote: () => calls.some((c) => c.startsWith("notes --ref=refs/notes/stack-ready add")), wroteWaiting: () => calls.some((c) => c.startsWith("notes --ref=refs/notes/stack-ready-waiting add")) };
 }
-const queueOf = (cards) => ({ at: T_MS - 60e3, cards: cards.map((k) => ({ owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", started: false, ...k })) });
+// #C1391: each row carries the card's stage (stack-ready waits for every other counted member to be built); a started row is built here unless it says otherwise.
+const queueOf = (cards) => ({ at: T_MS - 60e3, cards: cards.map((k) => ({ owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", started: false, stage: k.started ? "built" : "unbuilt", ...k })) });
 const ready = (queue, id) => { const g = fakeGit(id); const r = stackReady({ run: g.run, queue, now: () => T_NOW }); return { ...r, wroteNote: g.wroteNote(), wroteWaiting: g.wroteWaiting() }; };
 
 test("a card of a batch waits while another open card of the batch is not built, even though nothing depends on it", () => {
@@ -47,19 +48,22 @@ test("cards without a batch behave as today; so does a card pulled out of its ba
   assert.equal(ready(queueOf([{ id: "card-a" }, { id: "card-b" }]), "card-a").signal, true, "no batch at all");
   assert.equal(ready(queueOf([{ id: "card-a", batch: "" }, { id: "card-b", batch: "g1" }]), "card-a").signal, true, "pulled out: its batch is empty, the others do not hold it");
   assert.equal(ready(queueOf([{ id: "card-a", batch: "g1" }, { id: "card-b", batch: "g2" }]), "card-a").signal, true, "another batch is no partner");
-  assert.equal(ready(queueOf([{ id: "card-a", batch: "g1" }, { id: "card-b", batch: "g1", repo: "site-one" }]), "card-a").signal, true, "another repository is no partner");
+  assert.equal(ready(queueOf([{ id: "card-a", batch: "g1", repo: "flight-board" }, { id: "card-b", batch: "g1", repo: "site-one" }]), "card-a").signal, true, "another repository (both words known) is no partner");
+  assert.equal(ready(queueOf([{ id: "card-a", batch: "g1", repo: "" }, { id: "card-b", batch: "g1", repo: "site-one" }]), "card-a").signal, false, "a card with no repository word yet counts: it fails closed (#C1391)");
 });
 
-test("a paused or blocked batch peer is no partner to wait for: the queue file marks it held and stack-ready skips it, as the dispatch does (Checker 2 F1)", () => {
-  const view = { cards: [{ id: "card-a", owner_role: "Builder", batch: "g1" }, { id: "card-b", owner_role: "Builder", batch: "g1", paused: 1 }, { id: "card-c", owner_role: "Builder", batch: "g1", blocked_reason: "waits" }, { id: "card-d", owner_role: "Builder", batch: "g1" }], evidence: {} };
+// #C1391 (option A, the owner's pick on #T2255) REPLACES the old test "a paused or blocked batch peer is no partner to wait for" (Checker 2 F1 of #C1021): a paused or blocked card counts, so
+// it holds the READY like any member that is not built; the lead pulls it out of the group to send the others on. A paused member that is built does not hold it.
+test("a paused or blocked batch peer holds the READY until it is built; pulled out of the batch, it holds nothing", () => {
+  const view = { cards: [{ id: "card-a", owner_role: "Builder", batch: "g1" }, { id: "card-b", owner_role: "Builder", batch: "g1", paused: 1 }, { id: "card-c", owner_role: "Builder", batch: "g1", blocked_reason: "waits" }], evidence: {} };
   const q = stackQueueFile(view, T_MS - 1000);
-  assert.deepEqual(q.cards.map((k) => k.held), [false, true, true, false]);
-  assert.equal(ready({ ...q, at: T_MS - 60e3 }, "card-a").signal, false, "card-d is a real peer and still holds card-a");
-  const only = { ...q, at: T_MS - 60e3, cards: q.cards.filter((k) => k.id !== "card-d") };
-  const r = ready(only, "card-a");
-  assert.equal(r.signal, true, "only paused and blocked peers are left: the READY goes");
-  assert.equal(ready(queueOf([{ id: "card-a", batch: "g1" }, { id: "card-b", batch: "g1", held: true }]), "card-a").signal, true);
-  assert.equal(ready(queueOf([{ id: "card-a", batch: "g1" }, { id: "card-b", batch: "g1", held: false }]), "card-a").signal, false);
+  assert.deepEqual(q.cards.map((k) => k.stage), ["unbuilt", "unbuilt", "unbuilt"]);
+  assert.equal(ready({ ...q, at: T_MS - 60e3 }, "card-a").signal, false, "a paused and a blocked peer, neither built: no READY");
+  const pushed = { cards: view.cards, evidence: Object.fromEntries(["card-b", "card-c"].map((id) => [`cards.${id}`, { value: { lit: ["checker"], phase: "checker", headSha12: "b".repeat(12), signed: [], onMain: false } }])) };
+  const built = stackQueueFile(pushed, T_MS - 1000);
+  assert.equal(ready({ ...built, at: T_MS - 60e3 }, "card-a").signal, true, "paused and blocked but built: the READY goes");
+  const pulled = { ...q, at: T_MS - 60e3, cards: q.cards.map((k) => (k.id === "card-a" ? k : { ...k, batch: "" })) };
+  assert.equal(ready(pulled, "card-a").signal, true, "the lead pulled them out of the batch");
 });
 
 test("a batch wait never replaces the dependency wait: both are listed, the dependency first", () => {

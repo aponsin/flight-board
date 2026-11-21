@@ -12,7 +12,8 @@ import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
 import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
 import { agentRank, orderListOf, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS, reviewerOf, CHECKER_NAME } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
-import { REVIEW_LANES, isReviewLane, reworkKind } from "../worker/reading.mjs"; // #C1385: the lane table, the review-lane test and the rework rule are the reading module's, not copies here
+import { REVIEW_LANES, isReviewLane } from "../worker/reading.mjs";
+import { stageOf, stageRank, groupStage, reworkKind } from "../worker/group-rule.mjs"; // #C1391: the one group stage and the one rework rule // #C1385: the lane table, the review-lane test and the rework rule are the reading module's, not copies here
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -104,7 +105,7 @@ export function turnsOf(card, e, ctx = {}) {
   if (reworkKind(card, e) === "reason") return [{ role: card.owner_role, phase: typeof phase === "string" && /^[a-z]{2,16}$/.test(phase) ? phase : "build", step: "reason" }];
   // #C1114: the Worker holds a step back from a review phase that has no FINDINGS note and no reason as rework "unexplained" (the card stays where it was shown):
   // the reviewer of that phase is asked to file the finding on this commit, which is what fills the counters. The owner is not woken: there is nothing to fix yet.
-  if (e?.rework === "unexplained" && phase !== "ship" && isReviewLane(phase)) { // PHASE_LANES has no plan or build: the review lanes, and ship (the lander's, not a review)
+  if (reworkKind(card, e) === "unexplained" && phase !== "ship" && isReviewLane(phase)) { // PHASE_LANES has no plan or build: the review lanes, and ship (the lander's, not a review)
     return [{ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "unexplained", sha, ...where, signed: signedBy }];
   }
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
@@ -165,7 +166,7 @@ export function stackQueueFile(view, now) {
       repo: typeof c.repo === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(c.repo) ? c.repo : "",
       dependsOn: [...new Set(dependsOf(c).filter((d) => CARD_ID.test(d) && d !== c.id))].slice(0, 50),
       batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
-      held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for
+      stage: stageOf(c, e), // #C1391: the card's one stage (unbuilt, built, signed, landed, live): stack-ready sends the READY only when every other counted member of its group is built; an older queue file has no stage and gives the waiting note
       // #C1103 (Checker 2's M2): the store's own reading of "held" for the group order (orderCards: paused, isHeld = waiting_on or a blocked_reason, or a dependency not live), so the
       // pre-push check and the store's stall line agree; `held` above stays what stack-ready waits on.
       orderHeld: !!(c.paused || isHeld(c) || dependsNotLive(c, view.cards, evidenceById)),
@@ -584,45 +585,30 @@ export const LANDING_ROLES = /^\s*(?:Checker|Security|Release)\b/i;
 // signed card): a card in a group is held ("group") while any other card of its group is open and not yet signed. A member is open unless it is dropped or
 // closed (done_at), and signed once its reading is at ship (every review signed) or live; a card with no reading yet (nothing pushed) is not signed. A card
 // with no group is untouched. The word is checked last, so a card's own hold (dropped, paused, blocked, asked, waiting_on) still names itself.
-const signedOrLanded = (e) => { const p = e?.phase ?? e?.lit?.[0]; return p === "ship" || p === "live"; };
-// #C1138: a member that has landed: its reading is live, or its commit is on main (a card at ship with onMain true waits only for its pack).
-const landedOnMain = (e) => (e?.phase ?? e?.lit?.[0]) === "live" || e?.onMain === true;
 export function landHoldsFile(view, now) {
   const cards = {};
   const asked = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null) asked.add(a.card_id);
   const all = (Array.isArray(view?.cards) ? view.cards : []).filter((c) => c && typeof c.id === "string" && CARD_ID.test(c.id));
   const ev = view && typeof view.evidence === "object" && view.evidence !== null && !Array.isArray(view.evidence) ? view.evidence : {};
-  // The groups that have an open member not yet signed: group word -> how many.
-  const open = (c) => !c.dropped && c.done_at == null; // a member still to land: not dropped, not closed
-  const waits = (c) => open(c) && !signedOrLanded(ev[`cards.${c.id}`]?.value); // ... and not yet signed
-  const unsigned = new Map();
-  for (const c of all) { const g = batchOf(c); if (g && waits(c)) unsigned.set(g, (unsigned.get(g) ?? 0) + 1); }
-  for (const c of all) {
-    if (Object.keys(cards).length >= LAND_HOLDS_MAX) continue;
+  // #C1391: both group answers come from the one rule (worker/group-rule.mjs groupStage); this file decides nothing about a group from a head, a signed phase or onMain.
+  // A card's word is "group" while another counted member of its group (open, a paused or blocked one included, same repository; a card with no repository word yet counts: it fails closed)
+  // is below `signed` (#C1119). #C1138: `groups` lists, for each card of a group still to land, the OTHER counted members below `landed`: the job lands a tip only when it carries every one of
+  // them (board-land.mjs landPlan), that is, only the group's head. A card with no group, or no other member to land, is not listed. Plain card ids only. The shape of the file is unchanged.
+  const evidenceOf = (id) => ev[`cards.${id}`]?.value;
+  const wordOf = (c) => {
     const has = (v) => typeof v === "string" && v.trim() !== "";
-    const g = batchOf(c), others = g ? (unsigned.get(g) ?? 0) - (waits(c) ? 1 : 0) : 0; // the unsigned members of its group besides itself
-    cards[c.id] = c.dropped ? "dropped" : c.paused ? "paused" : has(c.blocked_reason) ? "blocked" : asked.has(c.id) ? "asked" : has(c.waiting_on) && !LANDING_ROLES.test(c.waiting_on) ? "waiting_on" : others > 0 ? "group" : "";
-  }
-  // #C1138 (11-16 late: the land job landed #C1126 alone at 32438ae1, with G10's group head not built): signed members of one group are each free to land on their own once every member
-  // is signed, so the first tip the job tried went out alone and the group head no longer continued main. `groups` lists, for each card of a group, the OTHER members still to land
-  // (open, and not on main or live): the job lands a tip only when it carries every one of them (board-land.mjs landPlan), that is, only the group's head. A card with no group, or
-  // no other member to land, is not listed. Plain card ids only.
-  // #C1144 (Checker 2's LOW on #C1138): a member of ANOTHER repository has no commit here, so no head of this repository could ever carry it and the group would never land (it failed closed;
-  // Release landed it by hand): it is no peer. Security's M1 (cf4eb085): the repo word is not reliable (null until the probe fills it at the first push; one repository has the words
-  // ''/null, 'board' and 'flight-board', as BOARD_REPO_WORDS and the dispatch's reviewer key read them), so a peer is dropped only when BOTH cards name a repository (a non-empty word) and the two
-  // words, with every board word read as 'flight-board', differ. A card with no word yet, or a word that is not a string, is unknown and stays a peer: it fails closed (the lone tip waits).
-  const toLand = (c) => open(c) && !landedOnMain(ev[`cards.${c.id}`]?.value);
-  // #C1145: the words are compared as one repository's names, not as typed: case, spaces, an `<owner>/` front and a `.git` end do not make another repository ("Flight-Board", "aponsin/flight-board"
-  // and "flight-board.git" are the board's), so a spelling difference never drops a peer and lets a lone tip land. A card with NO commit yet is no different: it is still a member to land
-  // (toLand reads no commit, only that the card is open and not on main), and its word, if it has none yet, is unknown and keeps it a peer.
-  const repoOf = new Map(all.map((c) => { const w = repoKey(c.repo); return [c.id, w === "" ? "" : BOARD_REPO_WORDS.has(w) ? "flight-board" : w]; }));
-  const sameRepo = (a, b) => { const x = repoOf.get(a), y = repoOf.get(b); return x === "" || y === "" || x === y; };
-  const members = new Map();
-  for (const c of all) { const g = batchOf(c); if (g && toLand(c)) members.set(g, [...(members.get(g) ?? []), c.id]); }
+    const unsigned = batchOf(c) ? groupStage(c, all, evidenceOf, { need: "signed", except: c.id }).waitsFor.length > 0 : false;
+    return c.dropped ? "dropped" : c.paused ? "paused" : has(c.blocked_reason) ? "blocked" : asked.has(c.id) ? "asked" : has(c.waiting_on) && !LANDING_ROLES.test(c.waiting_on) ? "waiting_on" : unsigned ? "group" : "";
+  };
   const groups = {};
   for (const c of all) {
-    const g = batchOf(c), peers = g && toLand(c) ? (members.get(g) ?? []).filter((id) => id !== c.id && sameRepo(id, c.id)) : [];
+    if (Object.keys(cards).length >= LAND_HOLDS_MAX) continue;
+    cards[c.id] = wordOf(c);
+  }
+  for (const c of all) {
+    if (c.dropped || c.done_at != null || !batchOf(c) || stageRank(stageOf(c, evidenceOf(c.id))) >= stageRank("landed")) continue;
+    const peers = groupStage(c, all, evidenceOf, { need: "landed", except: c.id }).waitsFor.map((m) => m.id);
     if (peers.length && Object.keys(groups).length < LAND_HOLDS_MAX) groups[c.id] = peers;
   }
   return { at: now, cards, groups };

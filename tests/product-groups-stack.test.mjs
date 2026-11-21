@@ -142,7 +142,7 @@ function productCheckout() {
 }
 const q = (cards) => ({ at: Date.parse("2026-11-19T12:00:00Z"), cards });
 const now = () => "2026-11-19T12:01:00.000Z";
-const row = (id, extra = {}) => ({ id, owner_role: "Builder", repo: "platform", dependsOn: [], batch: "g1", held: false, started: false, ...extra });
+const row = (id, extra = {}) => ({ id, owner_role: "Builder", repo: "platform", dependsOn: [], batch: "g1", started: false, stage: extra.started ? "built" : "unbuilt", ...extra }); // #C1391: the row carries the card's stage
 
 test("stack-ready runs in a product checkout (no docs/DATA.md there): it waits for its group, then signals once the group is built", () => {
   const { wt, commit, run } = productCheckout();

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { reading } from "../worker/reading.mjs";
-import { groupWaits } from "../worker/group-rule.mjs";
+import { groupWaitsFor } from "../worker/group-rule.mjs";
 import { loadNames } from "./harness.mjs";
 
 const NOW = 1_795_208_000_000, SHA = "a".repeat(40);
@@ -17,7 +17,7 @@ test("a card at review waits for its group: `waitsFor` names the cards, with id 
   const r = read(card, ev(), ctx);
   assert.equal(r.wait, "group");
   assert.deepEqual(r.waitsFor, [{ id: "board-b", num: 2 }, { id: "board-c", num: 3 }]);
-  assert.equal(groupWaits(card, ev(), ctx.cards, ctx.evidence), true, "groupWaits is the same rule: the list is not empty");
+  assert.equal(groupWaitsFor(card, ev(), ctx.cards, ctx.evidence).length > 0, true, "the group wait is the same rule: the list is not empty");
   const built = read(card, ev(), { cards: [card, mate], evidence: { "board-b": ev({ lit: ["checker"] }) } });
   assert.notEqual(built.wait, "group");
   assert.equal("waitsFor" in built, false, "no group wait, no list");

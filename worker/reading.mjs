@@ -3,13 +3,13 @@
 // the agents' reading, the config and the time go in; { phase, state, wait, with, working, since, asOf, why } come out. Step 1 adds the module, its
 // fixtures and its laws; no view calls it yet (the Worker, the dispatch, the page and the crew panel move to it in steps 2 and 3).
 // It imports only worker/ files (the Worker bundle holds nothing of the collector).
-import { isRework, reworkKind, holdOpen, groupWaits, repoKey, repoKind, reviewerOf, PHASE_LANES } from "./board-rules.mjs";
+import { isRework, reworkKind, holdOpen, repoKey, repoKind, reviewerOf, PHASE_LANES } from "./board-rules.mjs";
 import { groupWaitsFor } from "./group-rule.mjs";
 
 // #C1385 (the gates read this module): the shared readings the dispatch and the stall lines used to keep copies of. ONE lane table (board-rules' PHASE_LANES, phase -> role), the review lanes
 // of it (the phases a lane's agent reviews, and ship, which Release lands) as a table of their own, and `isReviewLane`; `isRework` and `reworkKind` (the dispatch's two kinds of rework) and
-// `groupWaits` (rule A of a group, worker/group-rule.mjs) re-exported so every reader names this module for them.
-export { isRework, reworkKind, groupWaits, PHASE_LANES };
+// `reworkKind` (the one rework rule, worker/group-rule.mjs) re-exported so every reader names this module for them.
+export { isRework, reworkKind, PHASE_LANES };
 export const REVIEW_LANES = Object.freeze(Object.fromEntries(["language", "design", "checker", "security", "ship"].map((p) => [p, PHASE_LANES[p]])));
 export const isReviewLane = (phase) => typeof phase === "string" && Object.hasOwn(REVIEW_LANES, phase);
 
@@ -178,8 +178,8 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
   }
   // A stale reading is never working: an old reading cannot say a session is on the card now, so it falls through to the wait or the turn it last had.
   const working = (role) => !stale && (isWorking(agents, role, card.id) || e.ci === "queued" || e.shipping === true);
-  // rework: findings on its tip, or a tip newer than its last sign-off: with its owner again, whatever phase is lit.
-  if (isRework(card, e)) return out("rework", null, "sent back: findings or a newer tip than its last sign-off", { working: working(card.owner_role) });
+  // rework (#C1391): FINDINGS on its tip, or a step back with no reason yet: with its owner again, whatever phase is lit. A re-cut after sign-offs is not rework.
+  if (isRework(card, e)) return out("rework", null, "sent back: a review put FINDINGS on its tip, or a step back has no reason yet", { working: working(card.owner_role) });
   const wait = waitOf({ card, e, phase, kind, now, claims, agents, config, ctx });
   const role = withOf(card, e, phase, wait?.kind ?? null, "waiting", claims, config);
   if (working(role)) return out("working", wait, `${role} is on it`, { working: true });

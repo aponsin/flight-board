@@ -138,9 +138,9 @@ test("(q) stackQueueFile: open cards only, ids and plain values, started = a pus
   assert.equal(q.at, NOW);
   assert.deepEqual(q.cards.map((k) => k.id), ["c1-base", "c2-next", "c5-bad", "c6-self"]);
   // #C1103: the number and whose turn it is ride along: a pushed card at review is nobody-else's-turn, an unpushed one is the owner's.
-  assert.deepEqual(q.cards[0], { id: "c1-base", owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", held: false, orderHeld: false, started: true, num: 1, rework: false, groupStarted: false, turn: false });
-  assert.deepEqual(q.cards[1], { id: "c2-next", owner_role: "Boardsmith", repo: "site-one", dependsOn: ["c1-base"], batch: "", held: false, orderHeld: true, started: false, num: 2, rework: false, groupStarted: false, turn: true });
-  assert.deepEqual(q.cards[2], { id: "c5-bad", owner_role: "", repo: "", dependsOn: [], batch: "", held: false, orderHeld: false, started: false, num: 5, rework: false, groupStarted: false, turn: true });
+  assert.deepEqual(q.cards[0], { id: "c1-base", owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", stage: "built", orderHeld: false, started: true, num: 1, rework: false, groupStarted: false, turn: false });
+  assert.deepEqual(q.cards[1], { id: "c2-next", owner_role: "Boardsmith", repo: "site-one", dependsOn: ["c1-base"], batch: "", stage: "unbuilt", orderHeld: true, started: false, num: 2, rework: false, groupStarted: false, turn: true });
+  assert.deepEqual(q.cards[2], { id: "c5-bad", owner_role: "", repo: "", dependsOn: [], batch: "", stage: "unbuilt", orderHeld: false, started: false, num: 5, rework: false, groupStarted: false, turn: true });
   assert.deepEqual(q.cards[3].dependsOn, ["c1-base"]);
   assert.ok(!JSON.stringify(q).includes("secret"));
   const many = { cards: Array.from({ length: 600 }, (_, n) => card(`k${n}`)), evidence: {} };
@@ -312,7 +312,8 @@ const twoBranches = (s) => { const one = soloBranch(s, "card-one", 10), two = so
 const statesOf = (s, cards) => cardStates({ cards, config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks: [""] });
 const WAITING = "refs/notes/stack-ready-waiting";
 const runOn = (s, branch, queue) => { s.g(["checkout", "-q", branch]); return ready(s, queue); };
-const q = (...cards) => queueOf(cards.map((c) => ({ batch: "g1", started: true, ...c })));
+// #C1391: the queue file carries each card's stage; a started member is built here unless the row says otherwise (the notes check below is independent of the stage).
+const q = (...cards) => queueOf(cards.map((c) => ({ batch: "g1", started: true, stage: c.started === false ? "unbuilt" : "built", ...c })));
 
 test("(d5) the probe: a signal on one member's head covers only that head; no peer rule", () => {
   const s = scratch();

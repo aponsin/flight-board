@@ -4,17 +4,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { groupWaits as ruleA, REVIEW_PHASES } from "../worker/group-rule.mjs";
-import { groupWaits as rulesA, isRework as rulesRework, reworkKind as rulesKind, PHASE_LANES as RULES_LANES, reviewerOf, slowWakes } from "../worker/board-rules.mjs";
-import { groupWaits, isRework, reworkKind, isReviewLane, REVIEW_LANES, PHASE_LANES, waitOf } from "../worker/reading.mjs";
+import { groupWaitsFor, REVIEW_PHASES } from "../worker/group-rule.mjs";
+const ruleA = (c, v, cards, evidence) => groupWaitsFor(c, v, cards, evidence).length > 0; // #C1391: the group wait is the list of cards it waits for, not empty
+import { isRework as rulesRework, reworkKind as rulesKind, PHASE_LANES as RULES_LANES, reviewerOf, slowWakes } from "../worker/board-rules.mjs";
+import { isRework, reworkKind, isReviewLane, REVIEW_LANES, PHASE_LANES, waitOf } from "../worker/reading.mjs";
 import { turnsOf, PHASE_LANES as DISPATCH_LANES, reviewerFor } from "../collector/store-dispatch.mjs";
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 const T = 1_800_000_000_000, MIN = 60e3;
 
-test("rule A is one function: the reading, the stall rules and the module are the same one", () => {
-  assert.equal(rulesA, ruleA);
-  assert.equal(groupWaits, ruleA);
+test("rule A is one function: the reading and the stall rules take it from the module, and no copy of the old `groupWaits` is left (#C1391)", () => {
+  assert.doesNotMatch(read("../worker/reading.mjs"), /\bgroupWaits\b(?!For)/);
+  assert.doesNotMatch(read("../worker/board-rules.mjs"), /\bgroupWaits\b(?!For)/);
   assert.deepEqual([...REVIEW_PHASES], ["language", "design", "checker", "security"]);
   assert.doesNotMatch(read("../worker/group-rule.mjs"), /^import /m, "it imports nothing, so a pinned script can take it without board-rules");
   assert.doesNotMatch(read("../worker/board-rules.mjs"), /k\.batch === c\.batch/, "board-rules holds no second copy of the rule");
@@ -30,15 +31,15 @@ const ROWS = [
   ["a member still at build holds it", me, rd("checker"), [mem("c1")], { c1: rd("build") }, true],
   ["every member at review: the READY is out", me, rd("checker"), [mem("c1")], { c1: rd("checker") }, false],
   ["a member at ship is built", me, rd("language"), [mem("c1")], { c1: rd("ship") }, false],
-  ["a paused member does not hold it", me, rd("checker"), [mem("c1", { paused: 1 })], {}, false],
+  ["a paused member holds it: a paused card counts (#C1391, option A)", me, rd("checker"), [mem("c1", { paused: 1 })], {}, true],
   ["a dropped member does not hold it", me, rd("checker"), [mem("c1", { dropped: 1 })], {}, false],
   ["a done member does not hold it", me, rd("checker"), [mem("c1", { done_at: T - MIN })], {}, false],
   ["another group's card does not hold it", me, rd("checker"), [mem("c1", { batch: "g2" })], {}, false],
   ["a card in no group is never held", { ...me, batch: null }, rd("checker"), [mem("c1", { batch: null })], {}, false],
   ["a card at build is not at review: no wait", me, rd("build"), [mem("c1")], {}, false],
   ["a card already on main is not held", me, rd("checker", { onMain: true }), [mem("c1")], {}, false],
-  ["a card outside the stack is not held", me, rd("checker", { stack: { outside: true } }), [mem("c1")], {}, false],
-  ["a card with no stack (stack mode off) is not held", me, rd("checker", { stack: undefined }), [mem("c1")], {}, false],
+  ["a card outside the stack waits too: the group is one review (#C1391 drops the stack condition)", me, rd("checker", { stack: { outside: true } }), [mem("c1")], {}, true],
+  ["a card with no stack (stack mode off) waits too (#C1391)", me, rd("checker", { stack: undefined }), [mem("c1")], {}, true],
 ];
 test("rule A, one table: the module's answer, the reading's wait and the slow wake agree on every row", () => {
   for (const [label, c, v, others, ev, waits] of ROWS) {
@@ -64,7 +65,7 @@ test("the lane table is one: the dispatch's lanes are the reading's review lanes
   assert.doesNotMatch(src, /Object\.hasOwn\(PHASE_LANES/, "the review-lane test is isReviewLane");
 });
 
-test("rework is one rule: isRework is reworkKind !== null, and the dispatch's step is the kind", () => {
+test("rework is one rule: isRework is the owner's two kinds of reworkKind (reason, findings), and the dispatch's step is the kind", () => {
   assert.equal(isRework, rulesRework);
   assert.equal(reworkKind, rulesKind);
   const reasons = [undefined, "", "review findings"], flags = [undefined, true, "unexplained"], phases = [undefined, "build", "checker", "security", "ship"], findings = [undefined, [], ["checker"], ["security"], ["ship"], ["checker", "x"]];
@@ -73,7 +74,9 @@ test("rework is one rule: isRework is reworkKind !== null, and the dispatch's st
     const card = { id: "c1", owner_role: "Builder", repo: "", ...(rework_reason === undefined ? {} : { rework_reason }) };
     const e = { phase, lit: phase ? [phase] : [], headSha12: "aaaaaaaaaaaa", signed: [], onMain: false, ...(rework === undefined ? {} : { rework }), ...(f === undefined ? {} : { findings: f }) };
     const kind = reworkKind(card, e);
-    assert.equal(isRework(card, e), kind !== null);
+    // the owner's rework is a step back with no reason or FINDINGS on the head; `unexplained` is the reviewer's turn, shown before the findings turn, so a card with both is still the owner's rework (#C1391)
+    if (kind !== "unexplained") assert.equal(isRework(card, e), kind === "reason" || kind === "findings");
+    else assert.equal(isRework(card, e), REVIEW_PHASES.includes(phase) && Array.isArray(f) && f.some((s) => REVIEW_PHASES.includes(s)));
     n++;
     const turns = turnsOf(card, e, {});
     const reason = turns.some((t) => t.step === "reason"), rework2 = turns.some((t) => t.step === "rework");

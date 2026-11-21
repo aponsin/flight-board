@@ -4,7 +4,7 @@
 import { mtTime, mtDayTime } from "./team-time.mjs";
 import { KNOBS, knobsShape, knobFrom } from "./knobs.mjs";
 import { isHeldBy } from "./held-by.mjs"; // #C1164: the one reading of waiting_on
-import { groupWaits, REVIEW_PHASES } from "./group-rule.mjs"; // #C1385: rule A of a group, written once
+import { REVIEW_PHASES, reworkKind, ownerRework, stageOf, groupMembers, groupWaitsFor } from "./group-rule.mjs"; // #C1391: the one group stage and the one rework rule, written once
 
 export const ASK_TYPES = ["Decision", "Action", "Terminal", "SessionStart", "Later", "Approval", "Answer", "Thread"];
 // The language review's key is "language" (its label is Linguist): the board config's phase key, which the probe reads and writes.
@@ -487,19 +487,10 @@ export function agentRank(a, b, order) {
 }
 // A card's group as a plain word: its batch id when it is in the plain shape, "" for none or an odd value (as the dispatch's batchOf reads it).
 export const groupOf = (c) => (typeof c?.batch === "string" && GROUP_ID_SHAPE.test(c.batch.trim()) ? c.batch.trim() : "");
-// The phases whose review note can send a card back with findings (a lane's note: language, design, checker, security).
-export const REVIEW_NOTE_PHASES = new Set(["language", "design", "checker", "security"]);
-// Whether a card is in REWORK, as the dispatch reads it in turnsOf: the store read a rework with no reason attached yet, or a review's note on the
-// card's head says FINDINGS while the card sits at that review's phase. `e` is the card's evidence value (cards.<id>), `card` its row.
-// #C1385: which of the two it is, so the dispatch's turnsOf reads the same rule instead of re-writing it: "reason" (the store read a rework and no reason is attached yet: the owner's
-// turn first), "findings" (a review's note on the head says FINDINGS while the card sits at that review's phase), or null (not in rework). isRework is exactly `reworkKind !== null`.
-export function reworkKind(card, e) {
-  if (e?.rework === true && !(typeof card?.rework_reason === "string" && card.rework_reason !== "")) return "reason";
-  const phase = e?.phase ?? e?.lit?.[0];
-  if (typeof phase !== "string" || !REVIEW_NOTE_PHASES.has(phase)) return null;
-  return (Array.isArray(e?.findings) ? e.findings : []).some((s) => typeof s === "string" && REVIEW_NOTE_PHASES.has(s)) ? "findings" : null;
-}
-export const isRework = (card, e) => reworkKind(card, e) !== null;
+// #C1391: `reworkKind` (reason, findings, unexplained) is the one rework rule and lives in ./group-rule.mjs; `isRework` is the OWNER's rework (reason or findings: the card is unbuilt, with its owner),
+// and `unexplained` is the reviewer's turn.
+export { reworkKind };
+export const isRework = ownerRework;
 // #C1103 (the owner, 11-16: Boardsmith worked g13 while g3, g10 and g6 waited, because Manager sent the work by hand): a role does not start a card of a lower group
 // while a higher group (the owner's order, groupCompare) has an open card of the same role that is the ROLE's turn. ONE rule, read by the pre-push check on a card
 // branch's first push (scripts/group-order-check.mjs, from stack-queue.json) and by the store's "being worked out of order" line (outOfOrderWork).
@@ -609,7 +600,7 @@ export function openGroupWithheld({ now, cards, evidenceOf, askedCards, endPasse
     if (isHeldBy(k)) continue;
     const blockers = waitsOn(k);
     // #C1160 (Checker 2's F1): a WIP start push has a head but is not READY, in a repository with the stack switch off too (where nothing sets stackHold).
-    const unready = !hasHead(k.id) || evidenceOf(k.id)?.stackHold === true || evidenceOf(k.id)?.wipHead === true;
+    const unready = stageOf(k, evidenceOf(k.id)) === "unbuilt";
     if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) { if (unready) blockedG.set(k.owner_role, new Set([...(blockedG.get(k.owner_role) ?? []), g])); continue; }
     if (unready) { openG.set(k.owner_role, new Set([...(openG.get(k.owner_role) ?? []), g])); for (const d of blockers) needed.add(d); }
   }
@@ -1448,15 +1439,12 @@ export const NOTE_FRESH_MS = 60 * 60_000;
 // #C1120 (11-16, #C1104, #C1105, #C1108: Manager got "rework reason missing" and then, about 30 s after the reason was attached, "is slow with no reason"): attaching a reason
 // clears the card's rework flag, so the #C1063 clause below (which needs the flag) never saw it. `reasonAt` is { card_id: time } of the newest rework_history row; a reason
 // attached in the last NOTE_FRESH_MS counts as the line's reason like a fresh next_note, flag or no flag.
-// #C1385: rule A (a groupmate not built yet) is written once in ./group-rule.mjs (it imports nothing); re-exported here for the callers that always took it from this file.
-export { groupWaits };
 // #C1358 (Checker 2's F1): the slow clock of a card in a stack group starts at the group's READY, when its last member reached review: the latest review-lane start among the group's open members
 // (null for any other card). The page reads the same time (groupReadyAt in page/board.template.html).
 export function groupReadyAt(c, v, cards, evidence, phaseStart) {
   if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || !v.stack || v.stack.outside === true) return null;
   let at = 0;
-  for (const k of cards ?? []) {
-    if (!k || k.batch !== c.batch || k.done_at || k.dropped || k.paused) continue;
+  for (const k of groupMembers(c, cards)) {
     const ph = evidence?.[k.id]?.lit?.[0];
     if (!REVIEW_PHASES.includes(ph)) continue;
     const s = phaseStart?.get(`${k.id}|${ph}`);
@@ -1474,7 +1462,7 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     if (phase === "ship" && v.onMain === true) continue;
     // #C1358: in stack mode the group sends ONE READY when its last card is built, so a card at a review lane while another card of its group is unstarted or at build is waiting
     // for that card, not slow: its clock starts at the READY (when every member reads at review).
-    if (groupWaits(c, v, cards, evidence)) continue;
+    if (groupWaitsFor(c, v, cards, evidence).length) continue;
     const start = phaseStart?.get(`${c.id}|${phase}`);
     if (!Number.isFinite(start) || start > now) continue;
     const limit = phase === "ship" ? shipSlowMs : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
