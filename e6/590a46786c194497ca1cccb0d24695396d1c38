@@ -1,0 +1,1 @@
+SECURE: #C1396 headAt, an optional isTime field the probe sends only within 2020..2100; the stuck rule also needs the tip older than the limit. INFO: headAt is the commit's own time, which its author sets, so a commit dated ahead of now keeps a card from reading stuck until that time; stuck is a wake hint, not a gate. Security 2026-11-20.
