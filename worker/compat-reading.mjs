@@ -33,8 +33,14 @@ export function readingDocs(view) {
     const r = reading(c, valueOf(c.id), claimsOf(c.id), agents, config, now, ctx);
     // `closed`: the store closed the card (done_at); `closedAt`: when (epoch ms), for the truth check's grace and window (#C1387 F1: it read `closed` as a time, and `closed` is true). A closed card whose reading is not live yet (the audit's 71) keeps its reading, but it is nobody's open card: no crew column.
     // Paused and Blocked are typed overlays (the contract keeps them): the card's tile is the yellow wait whatever the reading under it says, and nobody on it makes it no more working.
-    const overlay = !c.done_at ? (c.paused ? "paused" : c.blocked_reason ? "blocked" : null) : null;
-    return { id: c.id, num: c.num, ...(groupOf(c) ? { batch: groupOf(c) } : {}), ...(c.repo ? { repo: c.repo } : {}), ...(c.done_at ? { closed: true, closedAt: c.done_at } : {}), ...r, ...(overlay ? { overlay, working: false } : {}) };
+    // #C1405: a Blocked card that has an open ask on it (its hold_end is that ask) is Gated, not Blocked: its wait is the ask, so it draws the red stripes and sits under Needs you, as a card
+    // with an ask and no block does. A Paused card keeps the overlay (the store refuses a pause for a wait on the owner).
+    // A card with nothing pushed reads queued whatever asks it has (the reading's order puts "not started" first), so the gate is set here too: its wait is the ask, with the owner.
+    const ask = !c.done_at && !c.paused && c.blocked_reason ? ctx.asks.find((a) => a.card_id === c.id) : null;
+    const gated = !!ask && r.state !== "done" && r.state !== "unknown";
+    const read = gated && r.wait !== "ask" ? { ...r, state: "waiting", wait: "ask", ask: ask.num ?? null, with: config?.owner ?? "owner", working: false, why: "waits: ask" } : r;
+    const overlay = !c.done_at ? (c.paused ? "paused" : c.blocked_reason && !gated ? "blocked" : null) : null;
+    return { id: c.id, num: c.num, ...(groupOf(c) ? { batch: groupOf(c) } : {}), ...(c.repo ? { repo: c.repo } : {}), ...(c.done_at ? { closed: true, closedAt: c.done_at } : {}), ...read, ...(overlay ? { overlay, working: false } : {}) };
   });
 }
 
