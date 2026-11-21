@@ -2701,7 +2701,7 @@ function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   else if(T==="queued")t=`<small>${esc(queueLabel(i))}</small>`;
   else if(T==="stuck")t="";
   else if(T==="unknown")t=`<small>${esc(R.state==="unknown"?"no reading":"")}</small>`;
-  else if(T==="wait"&&R.state==="rework"&&!R.wait)t=`<small>Sent back</small>`;
+  else if(T==="wait"&&R.state==="rework"&&!R.wait)t=`<small>Sent back${R.with?" · "+esc(R.with):""}</small>`;
   else t=`<small class="rs">${waitTileWord(i,R)}</small>`;
   const slow=here&&(T==="working"||T==="stuck")?slowTag(i,k,times[k],c):"";
   // #C1319: the ship in progress carries its estimate from past ships, labelled "est.".

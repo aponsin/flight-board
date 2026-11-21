@@ -106,9 +106,11 @@ export function withOf(card, e, phase, wait, state, claims, config) {
   if (wait === "install" || wait === "ask") return config?.owner ?? "owner";
   if (state === "rework" || OWNER_PHASES.includes(phase) || !phase) return card?.owner_role ?? null;
   if (REVIEW.includes(phase)) {
-    // #C1406: a reviewer's open claim on the card holds it, on the current tip first, else on an older one (the claim is the reviewer's, not the tip's): the crew row never reads that reviewer idle.
+    // #C1406: at the checker phase a reviewer's open claim on the card holds it, on the current tip first, else on an older one (the claim is the reviewer's, not the tip's): the crew row never reads that
+    // reviewer idle. At the other review phases only a claim on the current tip counts: a Checker claim left open on an older tip does not make language, design or security read "with Checker 2" (Checker 2's F1).
     const open = (claims ?? []).filter((c) => c && !c.released_at && c.card_id === card?.id);
-    const claim = open.find((c) => typeof e?.headSha === "string" && c.sha === e.headSha) ?? open[0];
+    const onTip = open.find((c) => typeof e?.headSha === "string" && c.sha === e.headSha);
+    const claim = phase === "checker" ? onTip ?? open[0] : onTip;
     if (claim?.checker) return claim.checker;
     return (phase === "checker" ? reviewerOf(card, config?.reviewers) : undefined) ?? PHASE_LANES[phase] ?? null;
   }
@@ -181,7 +183,15 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
   // A stale reading is never working: an old reading cannot say a session is on the card now, so it falls through to the wait or the turn it last had.
   const working = (role) => !stale && (isWorking(agents, role, card.id) || e.ci === "queued" || e.shipping === true);
   // rework (#C1391): FINDINGS on its tip, or a step back with no reason yet: with its owner again, whatever phase is lit. A re-cut after sign-offs is not rework.
-  if (isRework(card, e)) return out("rework", null, "sent back: a review put FINDINGS on its tip, or a step back has no reason yet", { working: working(card.owner_role) });
+  // #C1406 (Checker 2's F2, the owner's third screenshot): a card sent back by findings reads at BUILD, with its owner, and says why in the lane's words ("review findings", or "security finding" from the
+  // security lane); `reviewPhase` keeps the lane that sent it back. A step back with no reason yet keeps the phase the probe read.
+  if (isRework(card, e)) {
+    if (reworkKind(card, e) === "findings") {
+      const lane = (Array.isArray(e.findings) ? e.findings : []).find((s) => REVIEW.includes(s)) ?? phase, reason = lane === "security" ? "security finding" : "review findings";
+      return out("rework", null, `sent back by ${lane}: ${reason}`, { working: working(card.owner_role), phase: "build", reviewPhase: lane, reason, since: ctx.phaseStart?.get?.(`${card?.id}|build`) ?? null });
+    }
+    return out("rework", null, "sent back: a step back has no reason yet", { working: working(card.owner_role) });
+  }
   const wait = waitOf({ card, e, phase, kind, now, claims, agents, config, ctx });
   const role = withOf(card, e, phase, wait?.kind ?? null, "waiting", claims, config);
   if (working(role)) return out("working", wait, `${role} is on it`, { working: true });

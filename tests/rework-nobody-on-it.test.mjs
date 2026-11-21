@@ -22,7 +22,7 @@ test("a card sent back with its owner on another card: the yellow tile and 'Sent
   const bare = draw({ wait: null, working: false });
   assert.equal(tile(bare, "Build").cls, "step waits proc");
   // Designer on 8c8c6488: " back" in a .sl part is hidden under 760 px, so a phone read "SENT"; the words are whole.
-  assert.match(tile(bare, "Build").inner, /<small>Sent back<\/small>/);
+  assert.match(tile(bare, "Build").inner, /<small>Sent back · Builder<\/small>/, "#C1406 restated: the tile names the owner the card is back with (it said only 'Sent back')");
   assert.doesNotMatch(tile(bare, "Build").inner, /class="sl"/);
   assert.doesNotMatch(html, /class="step waits ask"|class="step now stuck"|class="step now"/, "no tile on the row is red, dark or blue");
 });

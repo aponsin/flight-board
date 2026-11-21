@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { cardWriteRefusal } from "../worker/board-rules.mjs";
-import { reading } from "../worker/reading.mjs";
+import { reading, tileAt } from "../worker/reading.mjs";
 import { createCard, writeEvidence } from "../worker/board-store.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { cardState } from "../collector/state.mjs";
@@ -66,6 +66,16 @@ test("each transition in one probe run: findings set rework, a note that later r
   assert.equal("rework" in (await evidenceOf(db2)), false, "the same tip read at the checker again (its READY declared) clears the flag");
 });
 
+// Security's L2 on 99332612: the clearing needs "no findings of its own on the tip read at review".
+test("must still allow: a card with the sent-back flag that is read at review WITH findings on its tip keeps the flag", async () => {
+  const db = await fresh();
+  await writeEvidence(db, NOW + 1e3, "probe", "cards.a-card", rd(A, { findings: ["checker"], tipIssues: { bugs: 1 } }));
+  await writeEvidence(db, NOW + 2e3, "probe", "cards.a-card", rd(B, { lit: ["build"], phase: "build", stackHold: true, tipIssues: {} }));
+  assert.equal((await evidenceOf(db)).rework, true, "a newer tip still at build after findings is flagged");
+  await writeEvidence(db, NOW + 3e3, "probe", "cards.a-card", rd(B, { findings: ["checker"], tipIssues: { bugs: 1 } }));
+  assert.equal((await evidenceOf(db)).rework, true, "read at the checker with findings of its own: still sent back, the flag stays");
+});
+
 test("must still allow: a reading from a probe with no tipIssues keeps the old rules (counts only rise inside a range)", async () => {
   const db = await fresh();
   await writeEvidence(db, NOW + 1e3, "probe", "cards.a-card", rd(A, { issueCounts: { bugs: 2 } }));
@@ -115,4 +125,73 @@ test("the probe counts the open findings of the current tip alone: the old tip's
   assert.deepEqual(second.issueCounts, { security: 1 }, "the branch-wide sum (the unexplained hold's) is unchanged");
   s.note(fix, "security", "SECURE Quick", 80); s.sync();
   assert.deepEqual(probe(s, "card-c", fix, 60, msg).tipIssues, {});
+});
+
+// Checker 2's L1 on 99332612 (q6, q7): the covering tip's findings count, and a notes read that failed leaves the count out (never a 0 that would clear a real one).
+test("tipIssues counts the covering tip's findings too, and leaves the field out when a notes read failed", () => {
+  const s = scratch(), msg = "Work\n\nBoard-Id: card-d";
+  const mine = s.commit("card-d", msg, 10, true), top = s.commit("card-top", "Top\n\nBoard-Id: card-top", 20, true);
+  s.note(top, "checker", "FINDINGS Quick\nF1 MEDIUM a.mjs:1 wrong", 40); s.sync();
+  const card = { id: "card-d", num: 821, level: "Full", phase: "plan" };
+  const withCover = cardState(card, s.repo({ tips: s.tips("card-d", mine, 10, msg) }), cfg, T0 * 1000, { cover: top });
+  assert.deepEqual(withCover.tipIssues, { bugs: 1 }, "the stack tip's FINDINGS count for the card read under it");
+  assert.deepEqual(cardState(card, s.repo({ tips: s.tips("card-d", mine, 10, msg) }), cfg, T0 * 1000).tipIssues, {}, "with no cover nothing is open on its own tip");
+  const broken = s.repo({ tips: s.tips("card-d", mine, 10, msg) }), git = broken.git;
+  broken.git = (args) => { if (args[0] === "notes" && args.includes("show")) { const e = new Error("fatal: bad object"); e.status = 128; throw e; } return git(args); };
+  const failed = cardState(card, broken, cfg, T0 * 1000);
+  assert.equal("tipIssues" in failed, false, "no count is claimed from notes that could not be read");
+  assert.ok(Array.isArray(failed.unread) && failed.unread.includes("notes"), "the read failure is the card's own unread notes");
+});
+
+// Checker 2's L1 (q5): a flag an older reading set while the card sat at review clears only on a newer tip, never on the same tip read again.
+test("must still allow: a sent-back flag set while the card sat at review stays on the same tip and clears on a newer one", async () => {
+  const db = await fresh();
+  await writeEvidence(db, NOW + 1e3, "probe", "cards.a-card", rd(A, { tipIssues: {} }));
+  const row = await evidenceOf(db);
+  await db.prepare("UPDATE evidence SET value = ? WHERE key = 'cards.a-card'").bind(JSON.stringify({ ...row, rework: true })).run();
+  await writeEvidence(db, NOW + 2e3, "probe", "cards.a-card", rd(A, { tipIssues: {} }));
+  assert.equal((await evidenceOf(db)).rework, true, "the same tip read at the checker again: the flag stays");
+  await writeEvidence(db, NOW + 3e3, "probe", "cards.a-card", rd(B, { tipIssues: {} }));
+  assert.equal("rework" in (await evidenceOf(db)), false, "a newer tip read at the checker: back in review");
+});
+
+// Checker 2's F1 and F2 on 99332612.
+test("a card sent back by findings reads at BUILD with its owner and says why in the lane's words; the lane's own phase is kept", () => {
+  const sent = (lane, phase) => reading({ ...CARD, owner_role: "Builder" }, { ...rd(A), lit: [phase], phase, findings: [lane] }, [], {}, {}, NOW, {});
+  const c = sent("checker", "checker");
+  assert.deepEqual([c.state, c.phase, c.with, c.reason, c.reviewPhase], ["rework", "build", "Builder", "review findings", "checker"]);
+  assert.match(c.why, /review findings/);
+  assert.equal(tileAt(c, "build"), "wait", "the BUILD tile is the lit one (the owner's turn: yellow, nobody on it yet)");
+  assert.equal(tileAt(c, "checker"), "future", "the review lanes are not reached again");
+  const sec = sent("security", "security");
+  assert.deepEqual([sec.state, sec.phase, sec.with, sec.reason, sec.reviewPhase], ["rework", "build", "Builder", "security finding", "security"]);
+  assert.match(sec.why, /security finding/);
+  assert.notEqual(sec.why, c.why, "the why names the lane");
+  assert.equal(sent("language", "language").reason, "review findings");
+  const working = reading({ ...CARD, owner_role: "Builder" }, { ...rd(A), findings: ["checker"] }, [], { Builder: { state: "working", card: "a-card" } }, {}, NOW, {});
+  assert.equal(tileAt(working, "build"), "working", "with the owner on it the BUILD tile is the blue working one");
+});
+
+test("a Checker claim left open on an older tip holds the card at the checker only; at language, design and security only a claim on the current tip counts", () => {
+  const old = "c".repeat(40), claims = (sha) => [{ card_id: "a-card", sha, checker: "Checker 2", released_at: null }];
+  for (const [phase, lane] of [["language", "Linguist"], ["design", "Designer"], ["security", "Security"]]) {
+    const e = { ...rd(A), lit: [phase], phase };
+    assert.equal(reading(CARD, e, [], {}, {}, NOW, {}).with, lane, `${phase}: no claim reads the lane`);
+    assert.equal(reading(CARD, e, claims(old), {}, {}, NOW, {}).with, lane, `${phase}: an older tip's claim holds nothing`);
+    assert.equal(reading(CARD, e, claims(e.headSha), {}, {}, NOW, {}).with, "Checker 2", `${phase}: a claim on the current tip holds it`);
+  }
+  assert.equal(reading(CARD, rd(A), claims(old), {}, {}, NOW, {}).with, "Checker 2", "at the checker an older tip's claim still holds it");
+});
+
+// Security's L1 on 99332612: tipIssues is the probe's privacy check (only counts leave the Mac, never free text); the schema, not the Worker alone, refuses anything else, and never echoes it.
+test("the schema refuses a tipIssues that is not counts: an unknown kind, free text, 0, 100, a non-integer, a list; and echoes none of it", () => {
+  const base = { num: 820, phase: "checker", headSha12: "a".repeat(12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: T0 * 1000 };
+  const check = (tipIssues) => stateErrors({ v: 1, board: { boardId: "b", at: T0 * 1000, probe: null, pageVersion: null }, cards: { "card-c": { ...base, tipIssues } }, agents: {} });
+  assert.deepEqual(check({}), [], "no open findings fits");
+  assert.deepEqual(check({ bugs: 2, security: 1, language: 99, design: 1 }), [], "counts of the four kinds fit");
+  for (const bad of [{ typo: 1 }, { bugs: "SECRET-TEXT-9" }, { bugs: 0 }, { bugs: 100 }, { bugs: 1.5 }, { bugs: -1 }, { "SECRET-TEXT-9": 1 }, [], ["bugs"], "SECRET-TEXT-9", 5, null]) {
+    const errors = check(bad);
+    assert.ok(errors.length > 0, `refused: ${JSON.stringify(bad)}`);
+    assert.ok(!JSON.stringify(errors).includes("SECRET-TEXT-9"), `not echoed: ${JSON.stringify(bad)}`);
+  }
 });
