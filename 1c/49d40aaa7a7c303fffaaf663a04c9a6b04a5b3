@@ -1,0 +1,2 @@
+PASS (Quick) #C1405 line from 9081879aa2d09b36672b71f637dc3fc71fc68e0e: the re-cut of build/owner-wait-gated-not-paused onto main. range-diff shows all three commits = to f9b5f65d, 6a45909c and 10f53166 (the empty WIP commit dropped), and the tree diff from main is the card's six files only. My PASS on 10f53166 carries over: F1, F2, L1, L2 fixed; 8 of 8 mutants killed. Suite on this tip, on top of #C1391: 3779 pass, 0 fail. Nit left by Boardsmith's choice for a later card: 'Waiting on the owner of the board.' is allowed
+signed-by: Checker 2
