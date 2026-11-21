@@ -4,7 +4,9 @@
 // in no tab count and does not light the red pill. Fictional board.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadNames } from "./harness.mjs";
+const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 
 const T = Date.now();
 const NAMES = ["renderAll", "renderWaiting", "askHtml", "youItems", "tabCounts", "laterAsks", "settled", "needsYou", "resolvedIds"];
@@ -90,7 +92,9 @@ test("the owner's close is still there (Got it), and once closed it is settled, 
   const b = board([w]);
   const open = b.askHtml(w, new Set());
   assert.match(open, /data-act="done" data-id="a1">Got it<\/button>/);
-  assert.match(open, /data-act="help"/, "he can still answer it");
+  // Designer's F1: Got it is the only answer: no help button, no note box.
+  assert.doesNotMatch(open, /data-act="help"|<textarea|Something went wrong/, "a called-off ask has one answer");
+  assert.equal((open.match(/<button type="button"[^>]*data-act=/g) || []).length, 1);
   assert.equal(b.needsYou(w, T), true);
   const closed = { ...w, response: { status: "done", at: T - 9e4 } };
   const c = board([closed], [{ id: "m1", thread: "a1", from: "Owner", text: "ok", at: T - 9e4 }, { id: "m2", thread: "a1", from: "Manager", text: "Called off", at: T - 8e4 }]);
@@ -101,4 +105,37 @@ test("the owner's close is still there (Got it), and once closed it is settled, 
   const html = c.askHtml(closed, new Set());
   assert.match(html, /<span class="kind outdated">Outdated<\/span>/);
   assert.doesNotMatch(html, /data-copy/);
+});
+
+// Designer's F1: whatever the ask's kind, a called-off ask offers Got it and nothing else (an OK would read as a pick).
+test("a called-off decision offers Got it only: no OK, no Change something, no option buttons, no note box", () => {
+  const d = { id: "d1", kind: "decision", text: "Pick one", since: T - 9e5, options: [{ key: "A", label: "Red" }, { key: "B", label: "Blue" }], outdated: out() };
+  const html = board([d]).askHtml(d, new Set());
+  assert.match(html, /data-act="done" data-id="d1">Got it<\/button>/);
+  assert.doesNotMatch(html, /data-act="ok"|data-act="change"|data-act="chose"|data-act="help"|<textarea|class="other"/);
+  const ordinary = board([{ ...d, outdated: undefined }]).askHtml({ ...d, outdated: undefined }, new Set());
+  assert.match(ordinary, /data-act="chose"/, "control: an ordinary decision keeps its options");
+});
+
+// Designer's F2: "don't run these" only when there is something to run (a step's cmd or a rearm line).
+test("the called-off line says don't run these only when the ask has commands", () => {
+  const b = board([]);
+  const plain = { id: "p1", kind: "action", text: "Look at the page", since: T - 9e5, steps: ["1. Open it."], outdated: out() };
+  const dec = { id: "d2", kind: "decision", text: "Pick", since: T - 9e5, options: [{ key: "A", label: "Red" }], outdated: out() };
+  for (const w of [plain, dec]) {
+    const html = b.askHtml(w, new Set());
+    assert.match(html, /<div class="w-sub">Called off by Manager\.<\/div>/);
+    assert.doesNotMatch(html, /don't run these/);
+  }
+  assert.match(b.askHtml(term("a1", { outdated: out() }), new Set()), /Called off by Manager: don't run these\./, "a step's command");
+  assert.match(b.askHtml(rearm("r2", { outdated: out() }), new Set()), /Called off by Manager: don't run these\./, "a rearm line");
+});
+
+// Designer's F3 and F4 (the page's CSS): the reason sits in the steps column, and the green expected-result box is greyed with the commands.
+test("the reason line is indented like the steps and the expected result is greyed with the commands", () => {
+  assert.match(PAGE, /\.outdated-why\{[^}]*padding:0 16px 0 calc\(44px \+ 1\.4em\)/, "the steps column");
+  assert.match(PAGE, /\.thread \.w-item \.outdated-why\{padding-left:1\.6em;padding-right:0\}/, "and in a thread, as the steps are");
+  assert.match(PAGE, /\.w-item\.outdated \.cmd,\.w-item\.outdated \.expect\{opacity:\.45\}/);
+  const w = term("a1", { expect: "Installed pc125", outdated: out() });
+  assert.match(board([w]).askHtml(w, new Set()), /class="w-item outdated"[\s\S]*<div class="expect">You should see: Installed pc125<\/div>/, "the box is drawn inside the outdated card, so the rule greys it");
 });
