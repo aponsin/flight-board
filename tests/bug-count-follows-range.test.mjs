@@ -84,6 +84,19 @@ function scratch() {
 }
 const read = (s, id, sha, t, msg) => cardState({ id, num: 820, level: "Full", phase: "plan" }, s.repo({ tips: s.tips(id, sha, t, msg) }), cfg, T0 * 1000);
 
+test("(f) a rev-list that fails sends no issueBase and no counts, so a base change cannot wipe the counters", () => {
+  const s = scratch();
+  const msg = "Work\n\nBoard-Id: card-f";
+  const sha = s.commit("card-f", msg, 10, true);
+  s.note(sha, "FINDINGS Full\nF1 LOW a.mjs:1 one", 30); s.sync();
+  const asRead = (git) => cardState({ id: "card-f", num: 821, level: "Full", phase: "plan" }, s.repo({ git, tips: s.tips("card-f", sha, 10, msg) }), cfg, T0 * 1000);
+  assert.equal(asRead((args) => s.g(args)).issueBase, s.mainSha, "the control: it is sent when the range is listed");
+  const failing = (args) => { if (args[0] === "rev-list" && String(args[1]).startsWith("--max-count=60")) { const e = new Error("fatal: bad revision"); e.status = 128; throw e; } return s.g(args); };
+  const st = asRead(failing);
+  assert.ok(!("issueBase" in st), "no base on a failed listing");
+  assert.ok(!("issueCounts" in st));
+});
+
 test("(e) the probe's card evidence carries issueBase, the merge-base of main and the tip, and follows main when the base lands", () => {
   const s = scratch();
   const msg = "Work\n\nBoard-Id: card-r";

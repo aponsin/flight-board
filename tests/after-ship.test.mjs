@@ -83,6 +83,30 @@ test("the minute probe (cardState) reads the shipped commit too, with its sign-o
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
 });
 
+// #C1387 F4: the tip's own ancestry answered "no" and the card reads as its shipped commit; when the ancestry question about THAT commit then fails, main's place is unread (never "not on main").
+test("a shipped base whose ancestry read fails leaves main unread", () => {
+  const { r, shipped } = c521();
+  try {
+    const config = fullConfig({ owner: "Sam", collector: { repoPath: r.dir, notes: { checker: "refs/notes/checker" }, deployWorkflow: "CI", shippedPattern: PATTERN } });
+    const tips = r.g(["for-each-ref", "--format=%(refname:short)%09%(objectname)%09%(committerdate:unix)%09%(contents:subject)", "refs/remotes/origin"]).split("\n").filter(Boolean)
+      .map((l) => { const [ref, sha, at, message] = l.split("\t"); return { branch: ref.replace(/^origin\//, ""), sha, at: Number(at) * 1000, message }; }).filter((h) => h.branch !== "HEAD");
+    const card = { id: "stale-fix", status: "active", level: "Quick", size: "S", phase: "checker", num: 521 };
+    const readWith = (git) => cardState(card, { git, gh: null, remote: "origin", main: "main", notes: { checker: NOTES }, tips, live: r.main(), versionPattern: null, shippedPattern: PATTERN }, config, 1);
+    const isShippedAsk = (args) => args[0] === "merge-base" && args[1] === "--is-ancestor" && args[2] === shipped && args[3] === "origin/main";
+    // the control: every read answers, and the card reads as its shipped commit (live), nothing unread; count how often the shipped commit's ancestry is asked
+    let total = 0;
+    const control = readWith((args) => { if (isShippedAsk(args)) total++; return r.git(args); });
+    assert.equal(control.unread, undefined, "every read answers: nothing unread");
+    assert.equal(control.headSha12, shipped.slice(0, 12));
+    // the LAST ask is the one that reads main's place for the swapped head (the earlier ones find the shipped commit); it alone fails
+    let asked = 0;
+    const s = readWith((args) => { if (isShippedAsk(args) && ++asked === total) { const e = new Error("bad object"); e.status = 128; throw e; } return r.git(args); });
+    assert.ok(total >= 2 && asked === total, "the shipped commit's ancestry was asked again after the swap");
+    assert.deepEqual(s.unread, ["main"]);
+    assert.equal(s.onMain, false, "a failed answer is not read as on main");
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
 test("a rework after the ship (#C224) is new work: a commit after it with the card's Board-Id keeps the tip's phase", () => {
   const { r } = c521();
   try {

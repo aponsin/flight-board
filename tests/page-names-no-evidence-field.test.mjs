@@ -2,6 +2,7 @@
 // The card's row, its group's row and "Who is on what" draw the READING (state, wait, with, working, phase, why, pack, waitsFor, building, branches ...); the page never looks at the
 // probe's evidence for a card to say where it is. The names the collector and the Worker write into a card's evidence (collector/state-schema.mjs's CARD, the Worker's `lit`) are
 // scanned for in the page's CODE (comments, strings and the text of a template literal are not code; a `${...}` inside one is), as a property (`.name`, `?.name`) or an object key (`name:`).
+// Known limits: bracket access (`L["onMain"]`, strings are blanked) and a name destructured in a function's parameter list (`({onMain})=>`) are not seen; shorthand `const {onMain}=x` is.
 // A name that remains is on ALLOWED below, per function, with its reason; the six this card moved (closeableNow, groupWaitFor, versionNote's group wait, packTile, liveBuilding,
 // builtWaiting) are on no list and a test says so.
 import test from "node:test";
@@ -76,13 +77,25 @@ export function evidenceNames(page, names = EVIDENCE) {
   const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => ({ code: codeOf(m[1]), at: page.slice(0, m.index).split("\n").length }));
   const hits = [], re = new RegExp(`(?<!\\.)(?:\\?\\.|\\.)(${names.join("|")})\\b|\\b(${names.join("|")})\\s*:(?!:)`, "g"); // `.name` or `?.name` (not a `...spread`), or a key `name:`
   for (const { code, at } of scripts) {
-    const lines = code.split("\n");
-    let owner = null;
+    const lines = code.split("\n"), owners = [], starts = [];
+    let owner = null, off = 0;
     lines.forEach((line, k) => {
       const d = line.match(/^(?:async\s+)?function\s+(\w+)|^(?:const|let|var)\s+(\w+)/);
       if (d) owner = d[1] ?? d[2];
+      else if (/^\S/.test(line)) owner = null; // #C1387 F3: a column-0 line that is no declaration (a loose statement) is nobody's: it takes no function's allowance
+      owners.push(owner); starts.push(off); off += line.length + 1;
       for (const m of line.matchAll(re)) hits.push({ name: m[1] ?? m[2], owner, line: at + k });
     });
+    // #C1387 F3: a name read by shorthand destructuring, `const {onMain}=x` or `{onMain=1}=x` (a `{packed:p}` has its key caught above).
+    const lineOf = (pos) => { let k = 0; while (k + 1 < starts.length && starts[k + 1] <= pos) k++; return k; };
+    for (const m of code.matchAll(/\{([^{}]*)\}\s*=(?![=>])/g)) {
+      let p = m.index + 1;
+      for (const part of m[1].split(",")) {
+        const key = part.trim().replace(/^\.\.\./, "");
+        if (!part.includes(":") && names.includes(key.split("=")[0].trim())) { const k = lineOf(p + part.indexOf(key.charAt(0))); hits.push({ name: key.split("=")[0].trim(), owner: owners[k], line: at + k }); }
+        p += part.length + 1;
+      }
+    }
   }
   return hits;
 }
@@ -97,6 +110,18 @@ const h = i => i?.lit;
 </script>`;
   const got = evidenceNames(src).map((h) => `${h.name}@${h.owner}`);
   assert.deepEqual(got, ["onMain@f", "signed@g", "lit@h"]);
+});
+
+test("the scanner catches a shorthand destructuring and a loose column-0 statement after an allowed function (a known limit: bracket access L[\"onMain\"], strings being blanked)", () => {
+  const src = `<script>
+function liveCard(id){ return 1; }
+state.x=L=>L.packed;
+function zz(id){const {onMain}=liveCard(id);return onMain}
+function yy(L){const {a, seen=2, packed:p}=L;return a}
+const ww = ({lit}) => lit;
+</script>`;
+  const got = evidenceNames(src).map((h) => `${h.name}@${h.owner}`);
+  assert.deepEqual(got.sort(), ["onMain@zz", "packed@null", "packed@yy", "seen@yy"].sort());
 });
 
 test("every name scanned for is a field the collector or the Worker writes", () => {

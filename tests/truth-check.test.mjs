@@ -151,12 +151,12 @@ test("a reading that says it cannot be trusted is skipped, and so is a young ver
 test("a closed card whose reading is not done is compared on done only after an hour closed", () => {
   const fx = build(), f = facts(fx), at = LATER;
   try {
-    const stuckAtShip = R("c-card", { wait: "deploy", closed: at - 30 * 60_000 });
+    const stuckAtShip = R("c-card", { wait: "deploy", closed: true, closedAt: at - 30 * 60_000 });
     assert.deepEqual(compare(stuckAtShip, f["c-card"], { now: at }), [], "closed half an hour ago: not yet");
-    assert.deepEqual(compare({ ...stuckAtShip, closed: at - 2 * 3_600_000 }, f["c-card"], { now: at }), [{ field: "state", reading: "waiting, waits: deploy, card closed", git: "live: in v1.0.2 on main" }]);
-    assert.deepEqual(compare({ ...stuckAtShip, closed: true }, f["c-card"], { now: at }), [], "a closed time we cannot read is not compared");
-    assert.deepEqual(compare({ ...stuckAtShip, closed: at - 2 * 3_600_000 }, f["l-card"], { now: at }), [], "not live in git: nothing to say");
-    assert.deepEqual(compare(R("c-card", { state: "done", closed: at - 3 * 3_600_000 }), f["c-card"], { now: at }), [], "a closed card that reads done is compared as done");
+    assert.deepEqual(compare({ ...stuckAtShip, closedAt: at - 2 * 3_600_000 }, f["c-card"], { now: at }), [{ field: "state", reading: "waiting, waits: deploy, card closed", git: "live: in v1.0.2 on main" }]);
+    assert.deepEqual(compare({ ...stuckAtShip, closedAt: undefined }, f["c-card"], { now: at }), [], "a closed time we cannot read is not compared");
+    assert.deepEqual(compare({ ...stuckAtShip, closedAt: at - 2 * 3_600_000 }, f["l-card"], { now: at }), [], "not live in git: nothing to say");
+    assert.deepEqual(compare(R("c-card", { state: "done", closed: true, closedAt: at - 3 * 3_600_000 }), f["c-card"], { now: at }), [], "a closed card that reads done is compared as done");
   } finally { fx.done(); }
 });
 
@@ -285,6 +285,71 @@ test("a version main shipped before the merge does not hold the card, and the fi
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ---- #C1387 F2: the rules the facts rest on ----
+test("an ancestry answer git cannot give is unread, never a no: not on main, and not in the deploy", () => {
+  const fx = build();
+  try {
+    // merge-base fails with status 128 (a commit this clone lacks) while every other read works: the answer is unread, and landedAs is not asked to say "not on main"
+    const noMergeBase = (d, a) => { if (a[0] === "merge-base") { const e = new Error("bad object"); e.status = 128; throw e; } return defaultGit(d, a); };
+    const f = ask(fx, "l-card", { deps: { git: noMergeBase } });
+    assert.equal(f.onMain, UNREAD);
+    assert.deepEqual(compare(R("l-card", { wait: "pack" }), f, { now: LATER }), []);
+    // only the question about the Worker's commit fails: the pair is mixed, so the deploy is unread, never false
+    const treeSha = fx.s.Q, workerSha = fx.s.P;
+    const failOnWorker = (d, a) => { if (a[0] === "merge-base" && a[3] === workerSha) { const e = new Error("bad object"); e.status = 128; throw e; } return defaultGit(d, a); };
+    const g = ask(fx, "b-card", { deps: { git: failOnWorker, workerSha, treeSha } });
+    assert.equal(g.onMain, true);
+    assert.equal(g.deployed, UNREAD);
+    assert.deepEqual(compare(R("b-card", { state: "done", phase: "live" }), g, { now: LATER }), []);
+    // a false from the other side still decides: the tree lacks it
+    const failOnTree = (d, a) => { if (a[0] === "merge-base" && a[3] === fx.s.base) { const e = new Error("bad object"); e.status = 128; throw e; } return defaultGit(d, a); };
+    assert.equal(ask(fx, "p-card", { deps: { git: failOnTree, workerSha: fx.s.Q, treeSha: fx.s.base } }).deployed, false, "the Worker lacks it, so no after one unread");
+  } finally { fx.done(); }
+});
+
+test("a board card is deployed only when the Worker's commit AND the Studio tree hold it", () => {
+  const fx = build();
+  try {
+    const deployed = (workerSha, treeSha) => ask(fx, "b-card", { deps: { workerSha, treeSha } }).deployed;
+    assert.equal(deployed(fx.s.Q, fx.s.Q), true);
+    assert.equal(deployed(fx.s.Q, fx.s.base), false, "the Worker has it, the tree has not");
+    assert.equal(deployed(fx.s.base, fx.s.Q), false, "the tree has it, the Worker has not");
+    assert.equal(deployed(fx.s.base, fx.s.base), false);
+  } finally { fx.done(); }
+});
+
+test("a landing of code and docs is not docs only: it needs its deploy and its pack", () => {
+  const fx = build();
+  try {
+    writeFileSync(join(fx.dir, "docs", "y.md"), "y\n"); writeFileSync(join(fx.dir, "collector", "z.mjs"), "z\n");
+    fx.git("add", "-A"); fx.git("commit", "-q", "-m", "Code and docs\n\nBoard-Id: mixed-card");
+    const mixed = fx.git("rev-parse", "HEAD");
+    fx.git("update-ref", "refs/remotes/origin/main", mixed);
+    const f = askGit({ id: "mixed-card", headSha: mixed, kind: "board", dir: fx.dir, remote: "origin", main: "main", notes: NOTES }, { git: defaultGit, pairs: [], workerSha: fx.s.base, treeSha: fx.s.base, now: LATER });
+    assert.equal(f.onMain, true);
+    assert.equal(f.docsOnly, false);
+    assert.equal(f.deployed, false);
+    assert.equal(f.packed, false);
+    assert.ok(compare(R("mixed-card", { state: "done", phase: "live" }), f, { now: LATER }).some((d) => d.field === "deployed"));
+  } finally { fx.done(); }
+});
+
+// ---- #C1387 F1: the close time the Worker really serves ----
+test("a closed card as the Worker serves it (closed: true, closedAt) is compared, and one inside the grace is not", async () => {
+  const { readingDocs } = await import("../worker/compat-reading.mjs");
+  const view = JSON.parse(readFileSync(new URL("./fixtures/view-recorded.json", import.meta.url), "utf8"));
+  const docs = readingDocs(view).filter((d) => d.closed && d.state !== "done");
+  assert.ok(docs.length > 0, "the recorded view holds closed cards that do not read done");
+  for (const d of docs) assert.ok(d.closedAt === view.cards.find((c) => c.id === d.id).done_at && Number.isFinite(d.closedAt), d.id);
+  const d = docs[0], live = { kind: "board", onMain: true, deployed: true, docsOnly: false };
+  const got = compare(d, live, { now: d.closedAt + 2 * 3_600_000 });
+  assert.equal(got.length, 1, JSON.stringify(got));
+  assert.equal(got[0].field, "state");
+  assert.deepEqual(compare(d, live, { now: d.closedAt + 30 * 60_000 }), []);
+  assert.ok(pickReadings(docs, docs[0].closedAt + 86_400_000).length > 0, "a card closed a day ago is picked");
+  assert.deepEqual(pickReadings(docs, docs[0].closedAt + 8 * 86_400_000).filter((x) => x.id === d.id), [], "closed 8 days ago: not picked");
+});
+
 // ---- the file stands alone ----
 test("the job file imports nothing that feeds the evidence", () => {
   const src = readFileSync(new URL("../collector/truth-check.mjs", import.meta.url), "utf8");
@@ -358,7 +423,7 @@ test("at most CARD_CAP cards are asked, the first by number, closed cards only i
   assert.equal(picked.length, CARD_CAP);
   assert.equal(CARD_CAP, 60);
   assert.deepEqual([picked[0].num, picked[59].num], [1, 60]);
-  const old = [{ id: "a", num: 1, closed: 1e12 - 8 * 86_400_000 }, { id: "b", num: 2, closed: 1e12 - 86_400_000 }, { id: "c", num: 3 }, { id: "d", num: 4, closed: true }];
+  const old = [{ id: "a", num: 1, closed: true, closedAt: 1e12 - 8 * 86_400_000 }, { id: "b", num: 2, closed: true, closedAt: 1e12 - 86_400_000 }, { id: "c", num: 3 }, { id: "d", num: 4, closed: true }];
   assert.deepEqual(pickReadings(old, 1e12).map((r) => r.id), ["b", "c", "d"]);
   // the out-of-time cut leaves the rest for the next run
   const logs = [];

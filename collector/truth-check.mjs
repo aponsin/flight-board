@@ -179,9 +179,9 @@ export function compare(reading, facts, { now = Date.now() } = {}) {
   const board = facts.kind === "board";
   const deployedText = board ? (facts.docsOnly ? "docs only landing" : "in the deploy and the tree") : `in v${facts.version ?? "?"} on main`;
   const notDeployedText = board ? "not in the deploy and the tree" : "no version commit holds it";
-  // A closed card is meant to read done. One whose reading is not done is compared on that alone, once it has been closed over CLOSED_GRACE_MS (a closed time we cannot read: skipped).
+  // A closed card is meant to read done. One whose reading is not done is compared on that alone, once it has been closed over CLOSED_GRACE_MS (`closedAt`, epoch ms, which the Worker serves beside `closed: true`; a closed time we cannot read: skipped).
   if (reading.closed && reading.state !== "done") {
-    const at = Number.isFinite(reading.closed) ? reading.closed : null;
+    const at = Number.isFinite(reading.closedAt) ? reading.closedAt : null;
     if (at !== null && now - at > CLOSED_GRACE_MS && facts.onMain === true && facts.deployed === true) add("state", `${reading.state ?? "none"}${reading.wait ? `, waits: ${reading.wait}` : ""}, card closed`, `live: ${deployedText}`);
     return diffs;
   }
@@ -256,7 +256,7 @@ const expandHome = (p, home) => String(p).replace(/^~(?=\/|$)/, home);
 // The readings to check: every open card and each closed in the last CLOSED_WINDOW_MS, the first CARD_CAP by number.
 export function pickReadings(readings, now = Date.now()) {
   return (Array.isArray(readings) ? readings : [])
-    .filter((r) => plain(r) && typeof r.id === "string" && CARD_ID.test(r.id) && !(Number.isFinite(r.closed) && now - r.closed > CLOSED_WINDOW_MS))
+    .filter((r) => plain(r) && typeof r.id === "string" && CARD_ID.test(r.id) && !(Number.isFinite(r.closedAt) && now - r.closedAt > CLOSED_WINDOW_MS))
     .sort((a, b) => (Number.isInteger(a.num) ? a.num : Infinity) - (Number.isInteger(b.num) ? b.num : Infinity) || (a.id < b.id ? -1 : 1))
     .slice(0, CARD_CAP);
 }
