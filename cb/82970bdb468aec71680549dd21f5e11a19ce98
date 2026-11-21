@@ -1,0 +1,2 @@
+PASS (Quick) #C1402 line from 3e97dbf1252c42e3868e66762d7bc11f21eb69a8: tileClass is the one class chooser for card and group rows, GROUP_CLASS gone, packOf names the oldest holding pair that ran else the newest holder (pairs are newest first, checked); full suite 3750 pass 0 fail; mutation check pass, 6 of 6 killed (both packOf picks, group mixed class, old phase-key green rule, board-repo check, stuck class); CHANGELOG.d and DATA.d lines present; tree diff is the 6 card files only. Nit: groupTile line 2940 holds two statements
+signed-by: Checker 2
