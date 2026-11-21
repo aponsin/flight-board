@@ -12,12 +12,14 @@ const rd = (phase, extra = {}) => ({ lit: [phase], phase, headSha12: A, signed: 
 
 test("the rule: a commit after a sign-off or a sent-back review, a review sending the tip back, or a return to build, each on a transition only", () => {
   // A new tip after a review that sent the last tip back.
-  assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("checker", { headSha12: B })), true);
+  // #C1406 restated: a new tip after findings is rework while it is still the builder's (read at build); read at a review phase (its READY is declared) it is the card back in review.
+  assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("build", { headSha12: B })), true);
+  assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("checker", { headSha12: B })), false, "back in review");
   // Checker F1: a re-cut of a signed tip (a new head, the sign-offs gone) is NOT rework; only FINDINGS or a return to build are.
   assert.equal(reworkTriggered(rd("checker", { signed: ["language"] }), rd("checker", { headSha12: B })), false, "a re-cut of a signed tip");
   assert.equal(reworkTriggered(rd("ship", { signed: ["language", "design", "checker", "security"] }), rd("checker", { headSha12: B })), false, "a re-signed re-cut moving back through the reviews");
-  // A review sends the tip back: findings appear where there were none; the same findings on the next reading are not a new event.
-  assert.equal(reworkTriggered(rd("checker"), rd("checker", { findings: ["checker"] })), true);
+  // A review sends the tip back: findings appear where there were none. #C1406 restated: that sets no flag (the reading says "findings" from git, the owner's turn with the reason "review findings").
+  assert.equal(reworkTriggered(rd("checker"), rd("checker", { findings: ["checker"] })), false);
   assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("checker", { findings: ["checker"] })), false);
   // Back to build from a review or ship phase.
   for (const p of ["language", "design", "checker", "security", "ship"]) for (const to of ["plan", "build", "test"]) assert.equal(reworkTriggered(rd(p), rd(to)), true, `${p} -> ${to}`);
@@ -46,11 +48,11 @@ test("a commit after a review sent the tip back sets Rework in the card's eviden
   assert.equal((await updateCard(db, NOW, "Manager", { id: "a-card", next_note: "fine" })).ok, true, "writes are open while there is no rework");
   // A review sends the tip back, then the builder pushes a new commit: rework, once.
   await read(db, NOW + 40e3, rd("checker", { headSha12: C, findings: ["checker"] }));
-  assert.equal((await ev(db)).rework, true, "findings appeared");
+  assert.equal((await ev(db)).rework, undefined, "findings appeared: #C1406 restated, no flag is set for them");
   assert.equal((await updateCard(db, NOW + 45e3, "Builder", { id: "a-card", rework_reason: "review findings" })).ok, true);
   assert.equal((await ev(db)).rework, undefined);
-  assert.equal((await read(db, NOW + MIN, rd("checker", { headSha12: B }))).ok, true);
-  assert.equal((await ev(db)).rework, true, "a new commit after findings");
+  assert.equal((await read(db, NOW + MIN, rd("build", { headSha12: B }))).ok, true);
+  assert.equal((await ev(db)).rework, true, "a new commit after findings, still in build (#C1406 restated: it was read at checker)");
   // Other writes are refused until a reason is attached; the refusal says what is missing.
   const no = await updateCard(db, NOW + 2 * MIN, "Manager", { id: "a-card", next_note: "again" });
   assert.equal(no.ok, false);
@@ -58,7 +60,7 @@ test("a commit after a review sent the tip back sets Rework in the card's eviden
   assert.match(no.refused.detail, /Rework: reason missing/);
   assert.ok(REWORK_REASONS.every((r) => no.refused.detail.includes(r)), "the refusal lists the reasons");
   // Repeated readings keep it (the probe reads every minute) and do not need the transition again.
-  await read(db, NOW + 3 * MIN, rd("checker", { headSha12: B }));
+  await read(db, NOW + 3 * MIN, rd("build", { headSha12: B }));
   assert.equal((await ev(db)).rework, true);
   // The reason: accepted on its own, clears the flag, and is kept in the history.
   assert.equal((await updateCard(db, NOW + 4 * MIN, "Builder", { id: "a-card", rework_reason: "review findings" })).ok, true);
@@ -67,12 +69,14 @@ test("a commit after a review sent the tip back sets Rework in the card's eviden
     { card_id: "a-card", reason: "review findings", at: NOW + 45e3, who: "Builder" }, { card_id: "a-card", reason: "review findings", at: NOW + 4 * MIN, who: "Builder" }]);
   assert.equal((await updateCard(db, NOW + 5 * MIN, "Manager", { id: "a-card", next_note: "now fine" })).ok, true);
   // The same reading again does not set it a second time.
-  await read(db, NOW + 6 * MIN, rd("checker", { headSha12: B }));
+  await read(db, NOW + 6 * MIN, rd("build", { headSha12: B }));
   assert.equal((await ev(db)).rework, undefined, "a repeated reading is not a transition");
-  // A second rework, a second reason: both are in the history, oldest first, and the view carries them.
+  // A second rework, a second reason: both are in the history, oldest first, and the view carries them. #C1406 restated: security's findings set no flag; a return to build does.
   await read(db, NOW + 7 * MIN, rd("security", { headSha12: B, signed: ["checker"] }));
   await read(db, NOW + 8 * MIN, rd("security", { headSha12: B, signed: ["checker"], findings: ["security"] }));
-  assert.equal((await ev(db)).rework, true, "security sent the tip back");
+  assert.equal((await ev(db)).rework, undefined, "security sent the tip back: no flag, the reading says findings");
+  await read(db, NOW + 8.5 * MIN, rd("build", { headSha12: B, signed: ["checker"] }));
+  assert.equal((await ev(db)).rework, true, "back to build after security's findings: rework, as findings had been read");
   assert.equal((await updateCard(db, NOW + 9 * MIN, "Builder", { id: "a-card", rework_reason: "security finding" })).ok, true);
   const v = await readView(db, NOW + 10 * MIN);
   assert.deepEqual(v.reworkHistory.map((r) => r.reason), ["review findings", "review findings", "security finding"]);
@@ -83,7 +87,9 @@ test("findings appearing set Rework; going back to build sets it; landing or liv
   const db = await fresh();
   await read(db, NOW, rd("checker"));
   await read(db, NOW + MIN, rd("checker", { findings: ["checker"] }));
-  assert.equal((await ev(db)).rework, true, "findings appeared");
+  assert.equal((await ev(db)).rework, undefined, "findings appeared: #C1406 restated, no flag (the reading says findings from git)");
+  await read(db, NOW + 90e3, rd("build", { headSha12: C }));
+  assert.equal((await ev(db)).rework, true, "a new tip after the findings, still in build");
   // Landed: no more waiting for a reason.
   await read(db, NOW + 2 * MIN, rd("ship", { headSha12: B, onMain: true }));
   assert.equal((await ev(db)).rework, undefined, "on main clears it");

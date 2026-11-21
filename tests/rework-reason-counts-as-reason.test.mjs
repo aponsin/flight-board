@@ -42,6 +42,9 @@ test("the store: the rework line, then the reason attached, then 30 s later no s
   await createCard(db, T, "Manager", { id: "c", title: "A card", owner_role: "Boardsmith" });
   await writeEvidence(db, T, "probe", "cards.c", rd("checker", { findings: ["checker"] }));
   await writeEvidence(db, T + 1, "probe", "cards.c", rd("ship", { headSha12: B }));
+  // #C1406 restated: a probe no longer sets the flag for a push read at ship (the card is back in review), so the flag an older reading left is seeded here.
+  const row = JSON.parse((await db.prepare("SELECT value FROM evidence WHERE key = 'cards.c'").first()).value);
+  await db.prepare("UPDATE evidence SET value = ? WHERE key = 'cards.c'").bind(JSON.stringify({ ...row, rework: true })).run();
   const num = (await db.prepare("SELECT num FROM cards WHERE id = 'c'").first()).num;
   const attached = T + SHIP_SLOW_MS + 4 * MIN;
   await wakeAsk(db, attached - MIN);

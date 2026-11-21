@@ -134,6 +134,9 @@ test("a reason on a rework the probe saw through FINDINGS bumps its counter once
   await createCard(db, NOW, "Manager", { id: "b-card", title: "B", owner_role: "Builder", issues: { bugs: 2 } });
   await writeEvidence(db, NOW, "probe", "cards.b-card", rd("checker"));
   await writeEvidence(db, NOW + 60e3, "probe", "cards.b-card", rd("checker", { findings: ["checker"] }));
+  // #C1406 restated: findings alone set no flag; the rework is the builder's new tip, still in build (it was read at checker).
+  assert.equal((JSON.parse((await db.prepare("SELECT value FROM evidence WHERE key = 'cards.b-card'").first()).value)).rework, undefined, "findings set no flag");
+  await writeEvidence(db, NOW + 65e3, "probe", "cards.b-card", rd("build", { headSha12: B }));
   assert.equal((JSON.parse((await db.prepare("SELECT value FROM evidence WHERE key = 'cards.b-card'").first()).value)).rework, true);
   await updateCard(db, NOW + 70e3, "Builder", { id: "b-card", rework_reason: "bug found in test" });
   assert.deepEqual(JSON.parse((await db.prepare("SELECT issues FROM cards WHERE id = 'b-card'").first()).issues), { bugs: 3 });
@@ -146,7 +149,7 @@ test("a reading that returns to a review phase (the reviewer filed findings) rel
   await read(db, NOW + 120e3, rd("checker", { headSha12: B, findings: ["checker"] }));
   const e = await ev(db);
   assert.deepEqual(e.lit, ["checker"]);
-  assert.equal(e.rework, true, "findings are a rework that needs its reason, as before");
+  assert.equal(e.rework, undefined, "findings set no flag (#C1406 restated: the reading says findings from git, the owner's turn needs no hand step)");
   assert.equal(e.actual, undefined);
 });
 

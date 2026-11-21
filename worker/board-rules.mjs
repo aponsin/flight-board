@@ -1033,8 +1033,9 @@ export function reworkTriggered(prev, next) {
   if (typeof prev.headSha12 !== "string" || prev.headSha12 === "") return false;
   const had = (v) => Array.isArray(v) && v.length > 0;
   const newTip = typeof prev.headSha12 === "string" && typeof next.headSha12 === "string" && prev.headSha12 !== next.headSha12;
-  if (newTip && had(prev.findings)) return true;
-  if (!had(prev.findings) && had(next.findings)) return true;
+  // #C1406: FINDINGS on the current tip are read from git by the reading (reworkKind "findings": the owner's turn, reason "review findings", no hand step), so they set no flag here; and a newer tip
+  // read at a review phase (its READY is declared) is the card back in review, waiting for the re-sign. Only a new tip that is still the builder's (read at plan, build or test) is a step back.
+  if (newTip && had(prev.findings) && !REVIEWED.includes(next.lit?.[0])) return true;
   return REVIEWED.includes(prev.lit?.[0]) && BEFORE_REVIEW.includes(next.lit?.[0]);
 }
 // #C1114 part 2: a step back the probe derives from git (a card at a review phase read at plan, build or test) with no FINDINGS note on the tip it was

@@ -22,7 +22,9 @@ test("(1) a first push is never rework: no head before, whatever phase the earli
 });
 
 test("(1) still allowed: a real push after a review's FINDINGS is rework, and so is a pushed card going back to build", () => {
-  assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("checker", { headSha12: B })), true, "a push after FINDINGS");
+  // #C1406 restated: a push after FINDINGS is rework only while the card is still the builder's (the new tip read at plan, build or test); the new tip read at a review phase is the card back in review.
+  assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("build", { headSha12: B })), true, "a push after FINDINGS, still in build");
+  assert.equal(reworkTriggered(rd("checker", { findings: ["checker"] }), rd("checker", { headSha12: B })), false, "a push after FINDINGS, READY declared: back in review");
   assert.equal(reworkTriggered(rd("checker"), rd("build", { headSha12: B })), true, "a pushed card back to build");
   assert.equal(reworkTriggered(rd("build"), rd("build", { headSha12: B })), false, "a card that never left build");
 });
@@ -51,7 +53,10 @@ test("(2) end to end: the stall reaches Manager with the rework words, and attac
   const db = makeDb();
   await createCard(db, T, "Manager", { id: "c", title: "A card", owner_role: "Boardsmith" });
   await writeEvidence(db, T, "probe", "cards.c", rd("checker", { findings: ["checker"] }));
-  await writeEvidence(db, T + 1, "probe", "cards.c", rd("ship", { headSha12: B })); // a push after FINDINGS: rework, no reason yet
+  await writeEvidence(db, T + 1, "probe", "cards.c", rd("ship", { headSha12: B }));
+  // #C1406 restated: a probe no longer sets the flag for a push read at ship (that is the card back in review), so the card the stall is about is one that already carries the flag from an older reading: seeded here.
+  const row = JSON.parse((await db.prepare("SELECT value FROM evidence WHERE key = 'cards.c'").first()).value);
+  await db.prepare("UPDATE evidence SET value = ? WHERE key = 'cards.c'").bind(JSON.stringify({ ...row, rework: true })).run();
   await wakeAsk(db, T + SHIP_SLOW_MS + 2 * MIN);
   const num = (await db.prepare("SELECT num FROM cards WHERE id = 'c'").first()).num;
   assert.deepEqual((await takeInbox(db, T + SHIP_SLOW_MS + 3 * MIN)).stalls.map((s) => s.reason), [reworkReasonLine(num, "Boardsmith")]);

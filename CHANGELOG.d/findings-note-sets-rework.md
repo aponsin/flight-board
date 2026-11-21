@@ -1,0 +1,1 @@
+- Findings on the current tip are rework read from git, and the card's counters follow the tip (findings-note-sets-rework, #C1406): a fix tip with its READY reads back in review with no hand step, the counts are the open findings on the current tip, and an open review claim holds the card in the crew row. A probe and Worker change: it ships with the next pack.
