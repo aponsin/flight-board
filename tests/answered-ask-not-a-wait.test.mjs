@@ -39,6 +39,18 @@ test("an answered ask beside a second open unanswered ask: the card waits on the
   assert.equal(r.ask, 9002);
 });
 
+test("a withdrawn ask is no wait either, and a withdrawn one beside an open one leaves the open one", () => {
+  const withdrawn = { withdrawn_at: VIEW.now - 60_000 };
+  const base = readingWith([]);
+  const r = readingWith([ask(9001, withdrawn)]);
+  assert.notEqual(r.wait, "ask");
+  assert.equal(r.state, base.state);
+  assert.equal(r.wait, base.wait);
+  const both = readingWith([ask(9001, withdrawn), ask(9002)]);
+  assert.equal(both.wait, "ask");
+  assert.equal(both.ask, 9002);
+});
+
 test("the served reading of the recorded view's own ask row, put on the card: waits while open, no ask wait once answered", () => {
   const served = (patch) => { const v = clone(VIEW); v.asks[0] = { ...v.asks[0], card_id: ID, ...patch }; return compatView(v).collections.readings.find((d) => d.id === ID); };
   assert.equal(served({}).wait, "ask");

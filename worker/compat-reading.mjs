@@ -20,7 +20,7 @@ export function readingInputs(view) {
   const reviewers = view.evidence?.reviewers?.value?.reviewers;
   return {
     now, cards, agents, config: reviewers ? { reviewers } : {},
-    ctx: { asks: (view.asks ?? []).filter((a) => !a.closed_at && !a.answered_at && a.card_id).map((a) => ({ card_id: a.card_id, num: a.num })), cards: view.cards ?? [], evidence, phaseStart, medians: phaseMedians(view.history), endsPassed },
+    ctx: { asks: (view.asks ?? []).filter((a) => !a.closed_at && !a.answered_at && !a.withdrawn_at && a.card_id).map((a) => ({ card_id: a.card_id, num: a.num })), cards: view.cards ?? [], evidence, phaseStart, medians: phaseMedians(view.history), endsPassed },
     claimsOf: (id) => (Array.isArray(view.reviewClaims) ? view.reviewClaims : []).filter((r) => r && r.card_id === id),
     valueOf,
   };
