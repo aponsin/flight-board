@@ -33,6 +33,14 @@ const STATES = {
   "afterwork (deploy)": { state: "waiting", wait: "deploy", tile: "afterwork" },
 };
 const tileOfName = (n) => STATES[n]?.tile ?? n;
+// #C1404: the words a group tile's hover counts its cards in (the oracle is written out here, not read from the page): never the tile's internal name. An afterwork tile says which wait when every card in it waits for the same.
+const PLAIN = { done: "done", working: "working", stuck: "stuck", unknown: "not read yet", ask: "waiting on you", wait: "waiting", queued: "queued", future: "not started yet", afterwork: "waiting for pack or install" };
+const PLAIN_WAIT = { pack: "waiting for pack", install: "waiting for install", deploy: "waiting for deploy" };
+const plain = (tile, names) => {
+  if (tile !== "afterwork") return PLAIN[tile];
+  const waits = [...new Set(names.filter((n) => tileOfName(n) === "afterwork").map((n) => STATES[n].wait))];
+  return waits.length === 1 ? PLAIN_WAIT[waits[0]] : PLAIN.afterwork;
+};
 // A reading of a card that sits in the given state at `phase`.
 const at = (name, phase, extra = {}) => {
   const k = STRIP.indexOf(phase);
@@ -94,7 +102,7 @@ for (const row of ROWS) {
         assert.equal(g.cls, look(winner), `${a} with ${b} (either order): the group draws ${winner}`);
         assert.equal(groupReading(d.docs).tiles[row.phase], winner, `${a} with ${b}: it is groupReading's tile`);
         if (ta === tb) assert.equal(g.title, row.label, `${a} with ${b}: the same tile, no count`);
-        else assert.equal(g.title, `${row.label}: 1 of 2 cards ${winner}`, `${a} with ${b}: the title counts the cards in ${winner}`);
+        else assert.equal(g.title, `${row.label}: 1 of 2 cards ${plain(winner, names)}`, `${a} with ${b}: the title counts the cards in ${winner}, in plain words (#C1404)`);
       }
     }
   });

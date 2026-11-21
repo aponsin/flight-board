@@ -2933,11 +2933,19 @@ function cardMoveButtons(i,ord){if(!STORE||!isQueued(i))return "";const q=ord.fi
 // they agree, else the first tile in that module's TILE_ORDER (stuck, working, unknown, ask, wait, queued, future, afterwork, done). The page no longer reads the classes of drawn card tiles
 // (the rule of #C1343 is kept; where it reads is what changed). The words on a tile are the members' own wait words, shown only where every card in the winning tile says the same thing.
 const groupDocOf=b=>(state.groups||[]).find(g=>g&&g.batch===b)||null;
+// #C1404 (Designer's note on #C1402: a group tile's hover read "1 of 3 cards afterwork" and "1 of 3 cards future", the tile's internal names): the hover counts the cards in the winning tile in plain words,
+// the ones a card's own tile and pill use. An afterwork tile says which wait when every card in it waits for the same thing. The title only.
+const TILE_WORDS={done:"done",working:"working",stuck:"stuck",unknown:"not read yet",ask:"waiting on you",wait:"waiting",queued:"queued",future:"not started yet",afterwork:"waiting for pack or install"};
+const AFTERWORK_WORDS={pack:"waiting for pack",install:"waiting for install",deploy:"waiting for deploy"};
+function tilePhrase(t,rs){
+  if(t==="afterwork"){const w=[...new Set(rs.map(r=>r&&r.wait))];if(w.length===1&&AFTERWORK_WORDS[w[0]])return AFTERWORK_WORDS[w[0]]}
+  return TILE_WORDS[t]||"in progress"}
 function groupTile(b,k,l,cards,G,f){
   const t=G&&G.tiles&&Object.hasOwn(G.tiles,k)?G.tiles[k]:"future",rs=cards.map(i=>readingOf(i.id)),at=cards.map((i,j)=>tileAt(rs[j],k)),top=cards.filter((i,j)=>at[j]===t),topR=top.map(i=>readingOf(i.id));
   // #C1402: the group's class is the class of the cards that have this tile (tileClass, the card row's own function); when they differ (a Pack wait and an Install wait are both "afterwork") it is the plain wait, never green.
   const cl=[...new Set(top.map((i,j)=>tileClass(t,topR[j],i)))];
-  let cls=cl.length===1?cl[0]:tileClass(cl.length?"wait":t,null,cards[0]),small="<small>&nbsp;</small>";  const words=[...new Set(topR.map((r,j)=>waitTileWord(top[j],r)))];
+  let cls=cl.length===1?cl[0]:tileClass(cl.length?"wait":t,null,cards[0]),small="<small>&nbsp;</small>";
+  const words=[...new Set(topR.map((r,j)=>waitTileWord(top[j],r)))];
   const ov=[...new Set(topR.map(r=>r.overlay))];
   if(t==="wait"&&ov.length===1&&ov[0]){cls="step waits";small=`<small>${ov[0]==="blocked"?"Blocked":"Paused"}</small>`} // the overlay, as a paused card read in a group before: the blue ring and its word
   else if(t==="wait"||t==="afterwork"||t==="ask"){if(words.length===1&&words[0])small=`<small class="rs">${words[0]}</small>`;else if(cls.includes(" rel"))small=`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`}
@@ -2947,7 +2955,7 @@ function groupTile(b,k,l,cards,G,f){
   const tg=t==="working"&&isTogether(b,G&&G.phase||f.phase,cards);
   if(tg){cls+=" together";small='<small class="tog">together</small>'}
   const agree=at.every(x=>x===t);
-  return `<div class="${cls}" title="${esc(l)}${agree?"":": "+top.length+" of "+cards.length+" cards "+t}">${esc(l)}${small}</div>`}
+  return `<div class="${cls}" title="${esc(l)}${agree?"":": "+top.length+" of "+cards.length+" cards "+tilePhrase(t,topR)}">${esc(l)}${small}</div>`}
 function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(cards[0]);if(etaOver!==undefined)f.eta=etaOver;
   // A phase every card skips (and none is at) reads as each card's own strip: Test is left out, any other says "not needed".
   const skipAll=k=>cards.every(i=>Array.isArray(i.skip)&&i.skip.includes(k)&&i.phase!==k),shownT=track.filter(([k])=>!(k==="test"&&skipAll(k)));

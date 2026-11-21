@@ -79,7 +79,7 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.doesNotMatch(gr, /title="Test[":]/i, "Test, when every card skips it, is not on the group strip");
   assert.match(gr, /title="Security: not needed">Security<small>not needed/, "another skipped phase says not needed");
   // #C1383: the strip's Checker tile is the fold of the cards' readings (one waits on Checker, the other has none): a group tile, not a card's class
-  assert.match(gr, /class="step waits proc" title="Checker: 1 of 2 cards wait"/, "the group's tile is the Worker's fold");
+  assert.match(gr, /class="step waits proc" title="Checker: 1 of 2 cards waiting"/, "the group's tile is the Worker's fold, counted in plain words (#C1404)");
 });
 
 const button = (id, num) => {
