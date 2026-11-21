@@ -1,0 +1,1 @@
+- The landing job's own command line is tested for Designer's note (land-cli-designer-mutants, #C1408): the real board-land.mjs runs on a scratch origin and must refuse a tip with Designer's FINDINGS before any release tool starts, and let a LOOK-OK tip through, so dropping the designer facts or the designer-ref fetch fails a test. Tests only, no code change.
