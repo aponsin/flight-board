@@ -716,6 +716,10 @@ table.crew3-ph{margin-top:14px}
 .gp-act{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .gp-act button{font:600 .9rem var(--body);border-radius:6px;padding:7px 16px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--panel);white-space:nowrap}
 .gp-act button:disabled{opacity:.55;cursor:default}
+/* #C1389: an Approve on its way: the button is the grey of a sending reply with the same dots, the rest of the row is lowered and takes no click. */
+.gp-act button.sbtn{background:color-mix(in srgb,var(--line) 35%,var(--panel));border-color:var(--line)}
+.gp-row.pending{pointer-events:none}
+.gp-row.pending>:not(.gp-act){opacity:.6}
 .gp-act a{font-size:.8rem;color:var(--muted)}
 .gp-done{padding:8px 16px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
 .gp-done summary{cursor:pointer}
@@ -1010,6 +1014,8 @@ function prRows(prs,apps){
 function renderAgentPrs(now=Date.now()){
   const el=$("agentprs");if(!el)return;
   const {need,approved}=prRows(state.agentPrs,state.approvals);
+  // #C1389: an Approve is stored once its pull request has left the list to approve; a row that is gone ends its pending mark.
+  for(const k of [...sending.keys()])if(String(k).startsWith("b:approve:")&&!need.some(r=>"b:approve:"+Number(String(r.p.id).slice(2))===k))sending.delete(k);
   if(!need.length&&!approved.length){el.hidden=true;el.innerHTML="";return}
   const h7=s=>esc(String(s).slice(0,7)),link=p=>PR_URL.test(String(p.url||""))?p.url:null;
   const num=p=>{const u=link(p),t="#"+Number(String(p.id).slice(2));return u?`<a class="gp-num" href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`:`<span class="gp-num">${t}</span>`};
@@ -1025,8 +1031,11 @@ async function onAgentPr(e){
   if(!dbRef||!Number.isInteger(n)||n<1)return;
   const w=b.dataset.gpw?[{op:"delete",path:`approvals/pr${n}`}]:PR_HEX.test(String(b.dataset.head||""))?[{op:"set",path:`approvals/pr${n}`,data:{number:n,head:b.dataset.head,at:Date.now(),by:OWNER}}]:null;
   if(!w)return;
-  const was=b.textContent;b.disabled=true;
-  try{await applyWrites(w)}catch(_){b.disabled=false;b.textContent="Not saved: try again";setTimeout(()=>{b.textContent=was},4000)}}
+  // #C1389 (the owner: after Approve is clicked nothing showed the click took): the button takes the dots of a sending reply and the row looks disabled until the answer is stored (the row leaves the list) or the write fails.
+  const key="b:approve:"+n,approve=!!b.dataset.gpa;
+  if(approve&&sending.has(key))return;
+  const was=b.textContent;b.disabled=true;if(approve)markButton(key);
+  try{await applyWrites(w)}catch(_){b.disabled=false;if(approve)clearSending(key);b.textContent="Not saved: try again";setTimeout(()=>{b.textContent=was},4000)}}
 
 let dbRef=null, commentsRef=null, lastPing="";
 // The Collector reads only what changed since its last run (#C642), and the board filters on a document's own fields, so every write
@@ -2019,13 +2028,14 @@ function clearSending(id,reopen=false){sending.delete(id);
 // #C1241 (the owner: the same everywhere his click goes to Manager): the one sending state serves asks (a reply, Done, help, an option, Ack: the ask's id is the key, as a thread's is), threads, a new thread, and the
 // buttons that are not a row to fold (Ping, ↻ Check, Let's start, a context tile's ↻): a button's key is "b:<kind>:<id>", it takes the dots in place of its label (`.sbtn`, CSS) until Manager has taken it, and nothing else on the
 // page changes. Every control marks before it awaits, clears when its write fails, and ends the same way (taken, or SENDING_MAX).
-const BTN_SELECTOR="[data-tping],[data-check],[data-td=start],[data-ctxref]";
-function btnKeyOf(b){const d=(b&&b.dataset)||{};return d.tping?"b:ping:"+d.tping:d.check?"b:check:"+d.check:d.td==="start"&&d.id?"b:start:"+d.id:d.ctxref?"b:ctx:"+d.ctxref:null}
+const BTN_SELECTOR="[data-tping],[data-check],[data-td=start],[data-ctxref],[data-gpa]";
+function btnKeyOf(b){const d=(b&&b.dataset)||{};return d.tping?"b:ping:"+d.tping:d.check?"b:check:"+d.check:d.td==="start"&&d.id?"b:start:"+d.id:d.ctxref?"b:ctx:"+d.ctxref:d.gpa&&d.n?"b:approve:"+d.n:null}
 // The thread whose Manager word ends a button's state: the thread the button writes to (a context tile's is ctx-<role>).
 function btnThread(key){const m=/^b:(ping|check|start|ctx):(.+)$/.exec(String(key));return m?(m[1]==="ctx"?"ctx-"+m[2]:m[2]):null}
 function markButton(key,now=Date.now()){if(!key)return;sending.set(key,now);applySending(now)}
 function sendDots(){const h=document.createElement("span");h.className="sdots";const say=document.createElement("span");say.className="sr";say.textContent="Sending";h.appendChild(say);for(let k=0;k<3;k++){const dot=document.createElement("i");dot.setAttribute("aria-hidden","true");h.appendChild(dot)}return h}
-function sendingTaken(id,at,now){const seen=liveOn(now)?wakeSeen():null,tid=String(id).startsWith("b:")?btnThread(id):id;
+// #C1389: an Approve is taken when the store has it (the pull request leaves the list: renderAgentPrs clears it), so Manager's word or delivered time does not end it; it ends by that, by a failed write, or at SENDING_MAX.
+function sendingTaken(id,at,now){if(String(id).startsWith("b:approve:"))return now-at>SENDING_MAX;const seen=liveOn(now)?wakeSeen():null,tid=String(id).startsWith("b:")?btnThread(id):id;
   return now-at>SENDING_MAX||seen!=null&&seen>=at||!!tid&&threadOf(tid).some(m=>m&&m.from!==OWNER&&isT(m.at)&&m.at>at)}
 function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="function")return;
   for(const [id,at] of [...sending])if(sendingTaken(id,at,now))sending.delete(id);
@@ -2040,7 +2050,10 @@ function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="fun
   document.querySelectorAll(BTN_SELECTOR).forEach(b=>{const k=btnKeyOf(b),on=!!k&&sending.has(k);
     if(b.classList.contains("sbtn")!==on)b.classList.toggle("sbtn",on);
     const dots=b.querySelector(":scope>.sdots");
-    if(on&&!dots)b.appendChild(sendDots());else if(!on&&dots)dots.remove()})}
+    if(on&&!dots)b.appendChild(sendDots());else if(!on&&dots)dots.remove();
+    // #C1389: an Approve's whole row looks disabled while its answer is on its way.
+    const gr=b.dataset&&b.dataset.gpa&&typeof b.closest==="function"?b.closest(".gp-row"):null;
+    if(gr&&gr.classList.contains("pending")!==on)gr.classList.toggle("pending",on)})}
 // After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
 function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d=>{const k=foldKey(d),want=folds.has(k)?folds.get(k):open.has(d.dataset.id);if(want!==d.open)d.open=want})}
 // #C1229: draws html into el, but leaves alone every top-level node whose html is what it drew last time, so a redraw never touches a row that did not

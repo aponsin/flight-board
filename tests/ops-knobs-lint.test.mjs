@@ -110,6 +110,7 @@ export const FIXED = {
   "collector/truth-check.mjs:CLOSED_GRACE_MS": "how long a closed card whose reading is not done is left alone before the truth check compares it (1 h, #C1386): the contract's own wait, so a card that just closed is not called wrong",
   "collector/truth-check.mjs:CLOSED_WINDOW_MS": "how far back a closed card is still checked (7 days, #C1386): the same window the compat answer serves closed readings for, a size bound",
   "collector/truth-check.mjs:DEPLOY_SETTLE_MS": "how old a product's version commit must be before its deploy wait is called wrong (30 min, #C1386): the deploy run takes minutes, so a younger commit is not judged",
+  "collector/probe-evidence.mjs:PRS_LIMIT": "how many open pull requests one gh call lists in the open-pull-request step (200, #C1389): a list that fills it may be cut, so that repository is left unread; a size bound, not a tuning",
   "collector/truth-check.mjs:GIT_TIMEOUT_MS": "one git question's timeout in the truth check (15 s, #C1386): a cost bound inside the usage job's own limit",
   "worker/compat-usage.mjs:MAX_MIN": "a sanity bound",
   "worker/board-rules.mjs:STEP_PAST_MS": "write validity of a step's time",

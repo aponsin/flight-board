@@ -971,6 +971,12 @@ export function reviewerOf(card, reviewers) {
   const role = Object.hasOwn(reviewers, key) ? reviewers[key] : undefined;
   return typeof role === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(role) ? role : undefined;
 }
+// #C1389: the pull requests the probe read as OPEN on GitHub, evidence `prs`: { at, repos: ["owner/name", up to 10], open: ["owner/name#N", up to 400] }. A repository is named only when its list was read;
+// the panel of the agent's pull requests drops an Approval ask for a pull request of such a repository that is not in `open` (compat-approvals.mjs). A failed read writes nothing.
+export const PRS_REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
+export const prsShape = (v) => !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => ["at", "repos", "open"].includes(k)) && Number.isFinite(v.at)
+  && Array.isArray(v.repos) && v.repos.length <= 10 && v.repos.every((r) => typeof r === "string" && PRS_REPO.test(r))
+  && Array.isArray(v.open) && v.open.length <= 400 && v.open.every((s) => typeof s === "string" && /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}#[1-9][0-9]{0,6}$/.test(s) && v.repos.includes(s.slice(0, s.lastIndexOf("#"))));
 export function evidenceRefusal(key, value, who, track) {
   if (who !== "probe") return refuse("only-probe-writes-status", `${who ?? "unknown"} cannot write evidence`);
   if (typeof key !== "string" || !/^[a-z][a-z0-9]*(\.[A-Za-z0-9._-]+)?$/.test(key)) return refuse("evidence-key", String(key));
@@ -983,6 +989,7 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "branches.shipped" && !shippedBranchesShape(value)) return refuse("branches-shipped-shape", "branches.shipped is { at, repos: [up to 6 of { name, dir (~/ folder), remote, main, remoteBranches: [{ name, sha }], localBranches }] }, up to 60 plain branch names of each kind, never main, master, dev or HEAD");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   if (key === "truth" && !truthShape(value)) return refuse("truth-shape", "truth is { at, count: 0..500, items: [up to 10 of { card, num, field: onMain|deployed|notes|pair|state, reading, git }] }, strings plain, 1 to 80 characters");
+  if (key === "prs" && !prsShape(value)) return refuse("prs-shape", "prs is { at, repos: [up to 10 owner/name], open: [up to 400 owner/name#number of those repos] }");
   // #C997: the operational settings the probe resolved from the board config's ops section, and the ones it ignored (worker/knobs.mjs).
   if (key === "knobs" && !knobsShape(value)) return refuse("knobs-shape", "knobs is { values: { setting: number }, ignored: [up to 40 of { key, why }] }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
