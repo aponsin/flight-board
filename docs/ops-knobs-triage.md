@@ -9,7 +9,6 @@ constant that needs tuning later gets its own card, and moving one to a setting 
 | Constant | File | Verdict | Reason |
 |---|---|---|---|
 | HOSTED_USD_PER_MIN | collector/actions-usage.mjs | FIXED | GitHub's published price for a hosted runner minute: a price, not an operating number |
-| ABANDON_MS | collector/derive.mjs | FIXED | after 30 min with no evidence a plain build start counts as closed: a reading rule on the derived card |
 | SEND_TIMEOUT_MS | collector/probe-board.mjs | FIXED | 25 s, inside the ask job's own 30 s limit that the plist holds |
 | E2E_EVERY_MS | collector/probe-evidence.mjs | FIXED | how often the probe asks for the daily test run (30 min): a cost bound on gh reads |
 | E2E_STALE_MS | collector/probe-evidence.mjs | FIXED | how old the kept e2e answer may be before it reads unknown (2 h), well over E2E_EVERY_MS |
