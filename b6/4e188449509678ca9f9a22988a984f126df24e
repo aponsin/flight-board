@@ -1,0 +1,2 @@
+PASS (Full) board-truth-3 #C1386-#C1388 #C1395-#C1399, line from 99d37cd8851d2d1ed388ac12ffc6d4756c7297aa: re-signed by range-diff from 3c6b6f91 (FINDINGS F1-F4 fixed: closedAt served and read, truth-check ancestor/deploy-both/docs-only tests, scanner destructuring and col-0 owner, collector unread-main and if(listed) tests). Suite 3710/0/1; 63 mutants, all killed.
+signed-by: Checker 2
