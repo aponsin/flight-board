@@ -182,3 +182,57 @@ test("the held-by-decision row: the same decision with a new idle time raises no
   await say(T + 120 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN });
   assert.deepEqual(await told(T + 120 * MIN), ["#C1071 held by open decision m4, Boardsmith idle"], "the hold ended and starts again: told again");
 });
+
+// #C1412, Checker 2's F1 and Security's R1 and INFO: the store's own rows, on one store that Manager does not always take from.
+const rig = async () => {
+  const T = 1_800_000_000_000, db = makeDb();
+  await createCard(db, T, "Manager", { id: "pick-card", title: "A card", owner_role: "Boardsmith" });
+  await db.prepare("UPDATE cards SET num = 1071").run();
+  let last = T;
+  const say = async (to, boardsmith) => { // the probe reads every 3 minutes, Boardsmith as given
+    for (let at = last + 3 * MIN; at <= to; at += 3 * MIN) {
+      await writeEvidence(db, at, "probe", "agents", { Boardsmith: { card: null, tool: null, ...boardsmith, ...(boardsmith.state === "working" ? { lastActivityAt: at } : {}) }, Manager: { state: "working", lastActivityAt: at, since: T, tool: "Bash", card: null } });
+      await db.prepare("UPDATE evidence SET read_at = ?").bind(at).run();
+      last = at;
+    }
+  };
+  const post = (id, author, at, kind, body) => db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind) VALUES (?, 'owner-thread', ?, ?, ?, ?)").bind(id, author, body, at, kind).run();
+  const rows = async () => (await db.prepare("SELECT card_id, reason, created_at, taken_at FROM stall_wakes WHERE reason LIKE '%held by open decision%'").all()).results;
+  return { T, db, say, post, rows, sync: (at) => wakeAsk(db, at), take: async (at) => (await takeInbox(db, at)).stalls.map((s) => s.reason) };
+};
+const DECISION = "#C1071: which way?\n\nA or B?\n\nCard: pick-card", ROW = "#C1071 held by open decision m1, Boardsmith idle";
+
+test("the held-by-decision row is not retired unread when its owner runs a turn before Manager takes it: it is told once, when taken", async () => {
+  const { T, say, post, sync, take } = await rig();
+  await post("m1", "Manager", T + MIN, "decision", DECISION);
+  await say(T + 20 * MIN, { state: "idle", since: T, lastActivityAt: T });
+  await sync(T + 20 * MIN); // raised, Manager does not take it
+  await say(T + 40 * MIN, { state: "working", since: T + 25 * MIN });
+  await sync(T + 40 * MIN); // the owner works another card: the row must still be there, untaken
+  await say(T + 80 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN });
+  await sync(T + 80 * MIN);
+  assert.deepEqual(await take(T + 81 * MIN), [ROW], "Manager takes it now: told, once");
+  await sync(T + 85 * MIN);
+  assert.deepEqual(await take(T + 86 * MIN), [], "and not again for the same decision");
+});
+
+test("the held-by-decision row's own cleanup: the row of an answered decision goes, taken or not; the idle-agent record (agent-stall:<card>) is kept and ages, not rewritten each sync", async () => {
+  const { T, db, say, post, rows, sync, take } = await rig();
+  await post("m1", "Manager", T + MIN, "decision", DECISION);
+  await say(T + 20 * MIN, { state: "idle", since: T, lastActivityAt: T });
+  await sync(T + 20 * MIN);
+  assert.deepEqual(await take(T + 20 * MIN + 1), [ROW]);
+  const own = async () => (await rows()).filter((r) => !r.card_id.startsWith("agent-stall:"));
+  assert.equal((await own()).length, 1, "the row stands while its decision holds the card (taken)");
+  const record = async () => (await rows()).find((r) => r.card_id === "agent-stall:pick-card");
+  const first = await record();
+  assert.ok(first, "the idle-agent record of the held row exists");
+  await say(T + 33 * MIN, { state: "idle", since: T, lastActivityAt: T });
+  await sync(T + 33 * MIN);
+  assert.equal((await record())?.created_at, first.created_at, "the record keeps its first time (it is what the dispatch ages for the owner's wake), not now");
+  await post("m2", "owner", T + 34 * MIN, null, "A");
+  await say(T + 36 * MIN, { state: "idle", since: T, lastActivityAt: T });
+  await sync(T + 36 * MIN);
+  assert.equal((await own()).length, 0, "the decision is answered: its row is gone");
+  void db;
+});

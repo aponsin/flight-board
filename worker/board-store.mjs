@@ -634,7 +634,8 @@ async function syncStalls(db, now) {
   const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow), postedFreshMs, reviewers, decisionHolds });
   // #C1412: the "held by open decision" row is told once per (card, decision id): it stays while that decision holds the card (whatever the owner does meanwhile, so an owner who runs a turn
   // and goes idle again does not wake Manager twice), and goes once the decision is answered, withdrawn or replaced, so a later hold wakes him again.
-  for (const r of (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ?").bind(`%${DECISION_ROW}%`).all()).results) if (!decisionRowKept(r, decisionHolds, cards)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
+  // Not the agent-stall:<card> rows (#C1097, the idle-agent record the dispatch reads): their words hold the same text, but they are kept and aged by their own sweep below (Security's INFO).
+  for (const r of (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ? AND card_id NOT LIKE ?").bind(`%${DECISION_ROW}%`, `${AGENT_STALL}%`).all()).results) if (!decisionRowKept(r, decisionHolds, cards)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
@@ -713,7 +714,8 @@ async function syncStalls(db, now) {
   const pending = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE taken_at IS NULL").all()).results;
   // #C1005 (Checker 2's F1): a watch line is an event (the app restarted, prompts came in), not a state that can be over, so it stays until Manager
   // takes it, as a ping does: a later reading (the ledger a minute after a restart) must not retire an earlier one unread.
-  for (const p of pending) if (!p.card_id.startsWith(PING_CARD) && !p.card_id.startsWith(WATCH_WAKE_PREFIX) && !current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
+  // #C1412 (Checker 2's F1): the held-by-decision row is told once per decision, so it stays untaken until Manager takes it, like a ping: while its decision still holds the card an owner turn must not retire it unread.
+  for (const p of pending) if (!p.card_id.startsWith(PING_CARD) && !p.card_id.startsWith(WATCH_WAKE_PREFIX) && !decisionRowKept(p, decisionHolds, cards) && !current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
 }
 // #C873: the product's daily full test run (evidence e2e). Manager's batch gets ONE line when it turns red, missed or unknown from something else:
 // the row stays (taken or not) while the state holds, so a later probe run never tells it again; it goes when the state changes or turns ok.
