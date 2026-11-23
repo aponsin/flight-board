@@ -1,0 +1,1 @@
+SECURE: #C1415 head 73d38c1d (Quick), linear on main bc58c7b9, no merges. Tests only: four more refused shapes in tests/probe-readings.test.mjs ('Checker\t2', 'Checker\n2', 'Checker 2\t', 'Checker\t2\t'); fixtures fictional. No code, Worker, page or pack change. Touched test passes. My mutations both fail it: the space read as \s; a multiline $ (m flag). Security 2026-11-23.
