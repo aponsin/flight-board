@@ -1,0 +1,2 @@
+PASS Quick #C1413 build/stale-landed-not-deployed-v2 at 9c351c19: turnsOf gives no deploy-pair turn to a landed card whose reading says installed (a pack that ran and holds it, pairs.mjs) or carries a deploy, version, install or pair unread mark (the names state.mjs writes). Mutants, each killed: either half of the guard, each of the four unread names dropped alone, any unread at all, the on-main check dropped. Full suite 3838/3837 pass, 0 fail, 1 skipped. Line from c93ea537b81d57ea43d5851dad11cc51b6fb24a8. Checker 2
+signed-by: Checker 2
