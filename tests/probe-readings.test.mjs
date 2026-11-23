@@ -79,6 +79,17 @@ test("usage: top five as shares by role, scheduled and other; pace from the plan
   assert.equal(usageReading({ rows: "x", roster, plan: null, now: T }).top.length, 0);
 });
 
+// usage-source-numbered-role (11-23 1:15 pm MT): the roster's "Checker 2" came fifth in the week's spend and the whole state was refused; the tile's own output must fit the schema, end to end
+test("usage: a numbered role in the top five names itself and the state it goes into fits the schema", () => {
+  const roster = ["Boardsmith", "Builder", "Manager", "Checker 2", "Security"];
+  const rows = [{ source: "scheduled: watchdog", share: 0.3 }, { source: "Boardsmith", share: 0.14 }, { source: "Builder", share: 0.11 }, { source: "Manager", share: 0.09 }, { source: "Checker 2", share: 0.08 }, { source: "Security", share: 0.075 }];
+  const u = usageReading({ rows, roster, plan: null, now: T });
+  assert.deepEqual(u.top.map((t) => t.src), ["scheduled", "Boardsmith", "Builder", "Manager", "Checker 2"], "Checker 2 is fifth, as it was");
+  const s = buildState({ id: "b", now: T, probe: null, pageVersion: null, cards: {}, agents: {}, usage: u });
+  assert.deepEqual(stateErrors(s), [], "the state fits");
+  assert.notEqual(pickState(s), null, "and nothing is dropped");
+});
+
 test("the usage script runs every five minutes, keeps its rows, and a failing script leaves the last tile", () => {
   const dir = mkdtempSync(join(tmpdir(), "usage-"));
   const calls = [], inputs = [];
@@ -184,6 +195,9 @@ test("the state carries ctx, stuck and usage only as the schema allows", () => {
   assert.ok(bad({ stuck: { AA: { kind: "because the build is slow", card: null, since: T } } }).length, "no free text in a kind");
   assert.ok(bad({ usage: { ...s.usage, level: "purple" } }).length);
   assert.ok(bad({ usage: { ...s.usage, top: [{ src: "Manager says hi", pct: 1 }] } }).length, "a source is a word");
+  // usage-source-numbered-role: a roster role with a number ("Checker 2") is one word; any wider shape is still refused
+  assert.deepEqual(bad({ usage: { ...s.usage, top: [{ src: "Checker 2", pct: 7 }, { src: "Security", pct: 6 }, { src: "scheduled", pct: 5 }, { src: "other", pct: 4 }] } }), [], "a numbered role fits");
+  for (const src of ["Checker two", "Checker 234", "Checker  2", "Checker 2 x", "Checker 2!", " Checker 2", "2 Checker", "Checker 2\n", "A 2", "x".repeat(25), "Checker2 2 2"]) assert.ok(bad({ usage: { ...s.usage, top: [{ src, pct: 1 }] } }).length, `refused: ${JSON.stringify(src)}`);
   assert.ok(bad({ usage: { ...s.usage, top: Array.from({ length: 6 }, () => ({ src: "other", pct: 1 })) } }).length || pickState({ ...s, usage: { ...s.usage, top: Array.from({ length: 6 }, () => ({ src: "other", pct: 1 })) } }) === null);
   assert.ok(bad({ extra: 1 }).length);
   assert.equal(pickState({ ...s, ctx: { Builder: { ...s.ctx.Builder, note: "hi" } } }), null, "an extra key in a record is refused");

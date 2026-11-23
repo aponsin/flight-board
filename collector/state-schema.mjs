@@ -186,8 +186,10 @@ const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };
 const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since: isTime };
 const USAGE = { at: isTime, asOf: isTime, weekTotal: whole(0, 1e12), weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
-// A usage source stays ONE word (a role without a space, "scheduled" or "other"): free text must not become a key or a label (#C1117 widened ROLE, not this).
-const USAGE_TOP = { src: re(/^[A-Za-z][A-Za-z0-9]{1,23}$/), pct: whole(0, 100) };
+// A usage source stays ONE word (a role, "scheduled" or "other"): free text must not become a key or a label (#C1117 widened ROLE, not this).
+// usage-source-numbered-role (11-23 1:15 pm MT: "Checker 2" reached fifth place in the usage tile, failed this check, and every collector run was refused for 55 min): a numbered role is the one word,
+// a space and one or two digits ("Checker 2"). Nothing wider: "Manager says hi" and "Checker two" stay refused. The roster's roles with a space are exactly such roles.
+const USAGE_TOP = { src: re(/^(?=.{2,24}$)[A-Za-z][A-Za-z0-9]+(?: [0-9]{1,2})?$/), pct: whole(0, 100) };
 // #C1377: stale (only ever true) and staleSince mark a candidate read from a repository that was not read fresh this run, as a card's reading is marked.
 const SHIP = { version: nullOr(re(VERSION)), ci: (v) => SHIP_CI.includes(v), at: isTime, stale: (v) => v === true, staleSince: isTime };
 
