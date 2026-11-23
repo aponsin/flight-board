@@ -1,0 +1,2 @@
+PASS Quick #C1415 build/usage-source-tab-test at 73d38c1d: tests only; four tab and newline shapes join the refused usage sources, closing my minor on #C1414. My six pattern mutants are all killed now, the \s-for-space one included. Full suite green by the runner: 3835 run, 1 file killed by a signal (group-strip-from-card-readings, untouched here) passed 5/5 on its rerun, 0 assertion failures, 1 skipped. Line from bc58c7b9cc88251b4843d8ba4d1d7afdb1c33026. Checker 2
+signed-by: Checker 2
