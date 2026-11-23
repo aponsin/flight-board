@@ -69,6 +69,7 @@ export const PHASE_LANES = REVIEW_LANES; // #C1385: the reading module's table o
 // pinned probe imports; re-exported here for the dispatch's callers.
 import { BOARD_REPO_WORDS, repoKey, isBoardRepo, isBoardCard } from "./pairs.mjs";
 import { wantsSecurity as wantsSecurityOf } from "./signoff.mjs";
+const PAIR_UNREAD = new Set(["deploy", "version", "install", "pair"]); // #C1413: the reads (state.mjs unread marks) a landed card's "deployed or not" rests on
 export { BOARD_REPO_WORDS };
 const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
 // #C859 slice 3 (stack mode): ctx.stackBranch is the branch of the stack the card's repository has (when its switch is on), named in a
@@ -116,6 +117,10 @@ export function turnsOf(card, e, ctx = {}) {
     // #C1013: a pair is for the board's own repository only. A product card (any other repo word) is deployed by Release's ship, so it gets no pair turn.
     // A built pair that waits only for the owner's install and whose pinned commit descends from this card's landing already covers it: no build turn.
     if (e.onMain === true && fullSha && typeof ctx.pairCovers === "function" && ctx.pairCovers(fullSha) === true) return [];
+    // #C1413 (11-23: "#C1395 at ship ... landed and not deployed" for a card whose reading said packed and installed, pc122): the question above sees only a pair that WAITS, so a pack that has
+    // already RUN (the reading's installed, from the pair folder and git) was never seen and its card was told to build a pair that exists. And a deploy, version or install read that FAILED (unread,
+    // #C1387, #C1395) leaves the card at ship: unknown is not "not deployed". Neither is a pair turn; the reading's own words (Install tile, unread marks) say the rest.
+    if (e.onMain === true && (e.installed === true || (Array.isArray(e.unread) && e.unread.some((s) => PAIR_UNREAD.has(s))))) return [];
     if (e.onMain === true) return isBoardRepo(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy, ...(batchOf(card) ? { batch: batchOf(card) } : {}) }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
     if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];

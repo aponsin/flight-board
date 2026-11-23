@@ -95,6 +95,29 @@ test("a card the waiting pair covers gets no pair turn; one it does not cover, o
   assert.deepEqual(turnsOf(board, ev(), { pairCovers: () => { return "yes"; } }).map((t) => t.step), ["pair"], "only a true answer skips");
 });
 
+// #C1413 (11-23: "#C1395 at ship ... landed and not deployed" printed for a card read packed and installed, pc122)
+test("an installed pack prints no pair turn, nor does a landed card whose deploy, version, install or pair read failed; any other landed board card still does", () => {
+  const board = { id: "c-x", num: 1395, owner_role: "Boardsmith", repo: "flight-board" };
+  const steps = (o, ctx) => turnsOf(board, ev(o), ctx).map((t) => t.step);
+  assert.deepEqual(steps({ packed: true, installed: true, pack: 122 }), [], "a pack that ran holds the landing: nothing to build");
+  assert.deepEqual(steps({ packed: true, installed: true, pack: 122 }, { pairCovers: () => false }), [], "whatever the waiting-pair question says");
+  for (const src of ["deploy", "version", "install", "pair"]) assert.deepEqual(steps({ unread: [src] }), [], `a failed ${src} read is unknown, not "not deployed"`);
+  assert.deepEqual(steps({ unread: ["stack"] }), ["pair"], "a failed read of something else decides nothing here");
+  assert.deepEqual(steps({ packed: true }), ["pair"], "packed but never installed (no waiting pair known): still told to build");
+  assert.deepEqual(steps({ installed: false }), ["pair"], "not installed: told to build");
+  assert.deepEqual(steps({}), ["pair"], "the control: landed, no pack, nothing unread");
+  assert.deepEqual(turnsOf(board, ev({ installed: true, onMain: false, behindMain: true })).map((t) => t.step), ["recut"], "an installed flag on a card not on main changes nothing");
+});
+
+test("dispatchInput: a landed card read installed (pc122) has no turn in the dispatch", () => {
+  const now = 1_700_000_000_000;
+  const view = (o) => ({ evidence: { agents: { value: { Boardsmith: { state: "idle", since: now - 60e3 } }, readAt: now - 1000 }, "cards.landed-card": { value: ev(o) } }, cards: [{ id: "landed-card", num: 1395, owner_role: "Boardsmith", repo: "flight-board" }] });
+  const stepsOf = (o) => (dispatchInput(view(o), now, {})?.cards ?? []).flatMap((k) => k.turns.map((t) => t.step));
+  assert.deepEqual(stepsOf({}), ["pair"], "the control");
+  assert.deepEqual(stepsOf({ packed: true, installed: true, pack: 122 }), [], "installed: no line");
+  assert.deepEqual(stepsOf({ unread: ["deploy"] }), [], "deploy unread: no line");
+});
+
 test("dispatchInput passes the covering function down: a landed board card in the view loses its pair turn only when the pair covers it", () => {
   const now = 1_700_000_000_000;
   const view = { evidence: { agents: { value: { Builder: { state: "idle", since: now - 60e3 } }, readAt: now - 1000 }, "cards.landed-card": { value: ev() } }, cards: [{ id: "landed-card", num: 1013, owner_role: "Builder", repo: "board" }] };
