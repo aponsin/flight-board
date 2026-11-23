@@ -1,2 +1,2 @@
-STOP #C1412 build/no-stall-held-by-decision at dea7739f: replaces my PASS. Manager withdrew this range (it removes the held-by-open-decision row, which Manager wants kept and told once, per Boardsmith). Do not land; a new tip on the same branch comes for a fresh review. Checker 2
+PASS Quick #C1412 member of build/no-stall-held-by-decision (tip c93ea537 PASS): replaces my STOP. Withdrawn as a tip only; as a member, its removal of the held-by-decision row is restored by 8ab1bc49, and the range lands only as c93ea537. Checker 2
 signed-by: Checker 2
