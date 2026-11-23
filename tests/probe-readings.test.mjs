@@ -197,7 +197,7 @@ test("the state carries ctx, stuck and usage only as the schema allows", () => {
   assert.ok(bad({ usage: { ...s.usage, top: [{ src: "Manager says hi", pct: 1 }] } }).length, "a source is a word");
   // usage-source-numbered-role: a roster role with a number ("Checker 2") is one word; any wider shape is still refused
   assert.deepEqual(bad({ usage: { ...s.usage, top: [{ src: "Checker 2", pct: 7 }, { src: "Security", pct: 6 }, { src: "scheduled", pct: 5 }, { src: "other", pct: 4 }] } }), [], "a numbered role fits");
-  for (const src of ["Checker two", "Checker 234", "Checker  2", "Checker 2 x", "Checker 2!", " Checker 2", "2 Checker", "Checker 2\n", "A 2", "x".repeat(25), "Checker2 2 2"]) assert.ok(bad({ usage: { ...s.usage, top: [{ src, pct: 1 }] } }).length, `refused: ${JSON.stringify(src)}`);
+  for (const src of ["Checker two", "Checker 234", "Checker  2", "Checker 2 x", "Checker 2!", " Checker 2", "2 Checker", "Checker 2\n", "Checker\t2", "Checker\n2", "Checker 2\t", "Checker\t2\t", "A 2", "x".repeat(25), "Checker2 2 2"]) assert.ok(bad({ usage: { ...s.usage, top: [{ src, pct: 1 }] } }).length, `refused: ${JSON.stringify(src)}`);
   assert.ok(bad({ usage: { ...s.usage, top: Array.from({ length: 6 }, () => ({ src: "other", pct: 1 })) } }).length || pickState({ ...s, usage: { ...s.usage, top: Array.from({ length: 6 }, () => ({ src: "other", pct: 1 })) } }) === null);
   assert.ok(bad({ extra: 1 }).length);
   assert.equal(pickState({ ...s, ctx: { Builder: { ...s.ctx.Builder, note: "hi" } } }), null, "an extra key in a record is refused");
