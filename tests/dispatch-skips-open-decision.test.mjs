@@ -130,13 +130,55 @@ test("the stall line: a card with a decision open on a thread is not an idle age
   const none = await wakes([]);
   assert.equal(none.n, 1, "the control: an idle owner with a queued card wakes Manager");
   assert.match(none.line, /^Boardsmith idle since .*, 1 queued, next #C1071$/);
-  // #C1412: held out of the dispatch and the idle count, and no row of its own either: a card waiting on an open owner decision is waiting by design, so it never wakes Manager
+  // Manager's second change: held out of the dispatch and the idle count, but one row names the card and the decision, so a decision settled elsewhere cannot freeze it silently.
+  // #C1412: the row's words are the card, the owner and the decision id, with no idle time in them
   const held = await wakes([ask]);
-  assert.equal(held.n, 0, "an open decision holds the card: no stall, neither queued nor a held row");
-  assert.equal(held.line, "");
-  assert.equal((await wakes([ask], later - MIN)).n, 0, "an owner that was active a minute ago is not idle either");
+  assert.equal(held.n, 1, "an open decision holds the card out of the queue, and its row still wakes Manager");
+  assert.equal(held.line, "#C1071 held by open decision m1, Boardsmith idle");
+  assert.doesNotMatch(held.line, /queued/, "the held card is not counted as queued");
+  assert.equal((await wakes([ask], later - MIN)).n, 0, "an owner that was active a minute ago is not idle: the held card raises no row yet");
   const other = await wakes([["m9", "Builder", T + MIN, "decision", ask[4]]]);
   assert.match(other.line, /1 queued, next #C1071$/, "a decision from another role holds nothing: the card is queued as usual, with no held row");
   const answered = await wakes([ask, ["m2", "owner", T + 5 * MIN, null, "A"]]); // (the owner's own message also wakes Manager: the stall line is what is asked)
   assert.match(answered.line, /Boardsmith idle since .*, 1 queued, next #C1071/, "answered: the card is queued again");
+});
+
+// #C1412 (#C1411 woke Manager at 11:57 and again at 12:43 on the same decision, because the row said "idle since <time>" and the time moved each time the owner ran a turn):
+// the held-by-decision row is told ONCE per (card, decision id), on one store, through owner turns and a new idle time.
+test("the held-by-decision row: the same decision with a new idle time raises no second wake; a new decision on the card does; answered, the card stalls again", async () => {
+  const T = 1_800_000_000_000, db = makeDb();
+  await createCard(db, T, "Manager", { id: "pick-card", title: "A card", owner_role: "Boardsmith" });
+  await db.prepare("UPDATE cards SET num = 1071").run();
+  // the probe reads every 3 minutes (a longer silence is an outage, which stops the step clocks): Boardsmith as `boardsmith` says, from the last reading to `to`; Manager working
+  let last = T;
+  const say = async (to, boardsmith) => {
+    for (let at = last + 3 * MIN; at <= to; at += 3 * MIN) {
+      await writeEvidence(db, at, "probe", "agents", { Boardsmith: { card: null, tool: null, ...boardsmith, ...(boardsmith.state === "working" ? { lastActivityAt: at } : {}) }, Manager: { state: "working", lastActivityAt: at, since: T, tool: "Bash", card: null } });
+      await db.prepare("UPDATE evidence SET read_at = ?").bind(at).run();
+      last = at;
+    }
+  };
+  const post = (id, author, at, kind, body) => db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind) VALUES (?, 'owner-thread', ?, ?, ?, ?)").bind(id, author, body, at, kind).run();
+  const told = async (at) => { await wakeAsk(db, at); return (await takeInbox(db, at + 1)).stalls.map((s) => s.reason); };
+  const body = (n) => `#C1071: which way (${n})?\n\nA or B?\n\nCard: pick-card`;
+  await post("m1", "Manager", T + MIN, "decision", body(1));
+  await say(T + 20 * MIN, { state: "idle", since: T, lastActivityAt: T });
+  assert.deepEqual(await told(T + 20 * MIN), ["#C1071 held by open decision m1, Boardsmith idle"], "the first spell: Manager is told once");
+  await say(T + 40 * MIN, { state: "working", since: T + 25 * MIN, lastActivityAt: T + 40 * MIN }); // the owner runs a turn
+  assert.deepEqual(await told(T + 40 * MIN), [], "while it works nothing is told");
+  await say(T + 80 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN }); // idle again, a new idle time
+  assert.deepEqual(await told(T + 80 * MIN), [], "the same decision with a new idle time raises no second wake");
+  await say(T + 85 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN });
+  assert.deepEqual(await told(T + 85 * MIN), [], "nor when asked again");
+  await post("m2", "Manager", T + 81 * MIN, "decision", body(2));
+  await say(T + 90 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN });
+  assert.deepEqual(await told(T + 90 * MIN), ["#C1071 held by open decision m2, Boardsmith idle"], "a new decision on the same card tells him again");
+  await post("m3", "owner", T + 95 * MIN, null, "A");
+  await say(T + 100 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN });
+  const after = await told(T + 100 * MIN);
+  assert.equal(after.length, 1, "answered: the card is no longer held");
+  assert.match(after[0], /^Boardsmith idle since .*, 1 queued, next #C1071$/, "answered and the agent still idle: it stalls again as a queued card");
+  await post("m4", "Manager", T + 101 * MIN, "decision", body(4));
+  await say(T + 120 * MIN, { state: "idle", since: T + 45 * MIN, lastActivityAt: T + 45 * MIN });
+  assert.deepEqual(await told(T + 120 * MIN), ["#C1071 held by open decision m4, Boardsmith idle"], "the hold ended and starts again: told again");
 });
