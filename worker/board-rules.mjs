@@ -1287,7 +1287,7 @@ export const waited = (from, now, outages) => now - from - outageOverlap(from, n
 // resolved); the card it names (a "Card: <id>" line, else the one #C<n> in its first line) is held like a card with an open ask. This is collector/store-dispatch.mjs openDecisionCards,
 // copied (this file imports nothing of the collector): a test fails if the two differ. messages: rows { thread_id, author, body, created_at, kind, resolved }; cards: rows { id, num }.
 // Checker 2's note: a decision posted in a card's own thread (thread_id = the card's id) that names no card by a Card line or one #C<n> holds that card.
-// openDecisionHolds is the same rule returning Map card id -> id of the card's newest open decision, for the stall line's "held by open decision <id>" row (Manager's second change).
+// openDecisionHolds is the same rule returning Map card id -> id of the card's newest open decision, for the store, which keeps such a card out of the dispatch and the idle count (#C1412: no stall row names it).
 export const openDecisionCards = (messages, cards, lead = "Manager") => new Set(openDecisionHolds(messages, cards, lead).keys());
 export function openDecisionHolds(messages, cards, lead = "Manager") {
   const out = new Map(), idByNum = new Map(), ids = new Set();
@@ -1311,7 +1311,7 @@ export function openDecisionHolds(messages, cards, lead = "Manager") {
 // time would silence that role's stall lines for as long as it lies ahead).
 export const ACTIVITY_SKEW_MS = 5 * 60_000;
 export const activeRecently = (a, now, stallMs = STALL_AFTER_MS) => Number.isFinite(a?.lastActivityAt) && a.lastActivityAt - now <= ACTIVITY_SKEW_MS && now - a.lastActivityAt < stallMs;
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS, postedFreshMs = POSTED_FRESH_MS, reviewers, decisionHolds }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS, postedFreshMs = POSTED_FRESH_MS, reviewers }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -1377,15 +1377,9 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     if (waited(Math.max(start, a.since), now, outages) < stallMs) continue;
     out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${mtTime(a.since)}` });
   }
-  // #C1073 (Manager's second change): a card an open decision holds is out of the dispatch and out of the idle-agent count above, but not off the board: its owner idle for the
-  // stall time raises one row naming the decision, so a decision the owner settled somewhere else (chat, an answer that is no owner message) cannot freeze a card silently.
-  // decisionHolds: Map card id -> the decision's message id (openDecisionHolds). The row is the same words while the decision stays, so it is told once per spell.
-  if (decisionHolds instanceof Map) for (const [cardId, msgId] of decisionHolds) {
-    const c = (cards ?? []).find((k) => k.id === cardId), o = typeof c?.owner_role === "string" ? roster[c.owner_role] : null;
-    if (!c || !Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || holdOpen(c, now, endsPassed) || c.owner_role === "Manager" || !o || o.state !== "idle" || !Number.isFinite(o.since)) continue;
-    if (waited(o.since, now, outages) < stallMs || activeRecently(o, now, stallMs)) continue;
-    out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} held by open decision ${msgId || "(no id)"}, ${c.owner_role} idle since ${mtTime(o.since)}` });
-  }
+  // #C1412: a card an open owner decision holds is waiting by design, so it raises no stall row. (#C1073's "held by open decision <id>" row woke Manager every spell while #C1411 waited
+  // on the owner's in-thread decision, and a decision message cannot be a hold_end.) The store still keeps such a card out of the dispatch and the idle count (openAskCards, unansweredAskCards);
+  // once the decision is answered it is an ordinary queued card again and the lines above and below stall it as before.
   // #C910: one line per idle agent, not one per queued card (22 queued cards were 22 lines): "Boardsmith idle since 07:31Z, 22 queued, next #C901".
   // The next card is the first of the agent's queue (queueRank, as the dispatch wakes it); the line is its row, so it changes with the count or the next card.
   // #C947: one line per role with no open session, not one per card; the row is its text, so the same count and next card is the same row (not sent every minute).

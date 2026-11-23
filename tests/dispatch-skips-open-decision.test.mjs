@@ -130,12 +130,11 @@ test("the stall line: a card with a decision open on a thread is not an idle age
   const none = await wakes([]);
   assert.equal(none.n, 1, "the control: an idle owner with a queued card wakes Manager");
   assert.match(none.line, /^Boardsmith idle since .*, 1 queued, next #C1071$/);
-  // Manager's second change: held out of the dispatch and the idle count, but one row names the card and the decision, so a decision settled elsewhere cannot freeze it silently
+  // #C1412: held out of the dispatch and the idle count, and no row of its own either: a card waiting on an open owner decision is waiting by design, so it never wakes Manager
   const held = await wakes([ask]);
-  assert.equal(held.n, 1, "an open decision holds the card out of the queue, and its row still wakes Manager");
-  assert.match(held.line, /^#C1071 held by open decision m1, Boardsmith idle since .*$/);
-  assert.doesNotMatch(held.line, /queued/, "the held card is not counted as queued");
-  assert.equal((await wakes([ask], later - MIN)).n, 0, "an owner that was active a minute ago is not idle: the held card raises no row yet");
+  assert.equal(held.n, 0, "an open decision holds the card: no stall, neither queued nor a held row");
+  assert.equal(held.line, "");
+  assert.equal((await wakes([ask], later - MIN)).n, 0, "an owner that was active a minute ago is not idle either");
   const other = await wakes([["m9", "Builder", T + MIN, "decision", ask[4]]]);
   assert.match(other.line, /1 queued, next #C1071$/, "a decision from another role holds nothing: the card is queued as usual, with no held row");
   const answered = await wakes([ask, ["m2", "owner", T + 5 * MIN, null, "A"]]); // (the owner's own message also wakes Manager: the stall line is what is asked)

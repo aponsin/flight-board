@@ -626,12 +626,12 @@ async function syncStalls(db, now) {
   const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND outdated_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   // #C1073: a decision open on a thread holds its card as the dispatch does (collector/store-dispatch.mjs openDecisionCards), so the idle-agent line never counts or names it as queued.
   const decisionRows = (await db.prepare("SELECT id, thread_id, author, body, created_at, kind, resolved FROM messages WHERE thread_id IN (SELECT thread_id FROM messages WHERE kind = 'decision')").all()).results;
-  const decisionHolds = openDecisionHolds(decisionRows, cards); // card id -> the open decision's message id: the held card is kept out of the idle count but named in its own row (Manager's second change)
+  const decisionHolds = openDecisionHolds(decisionRows, cards); // card id -> the open decision's message id: the held card is kept out of the dispatch and the idle count, and raises no stall row (#C1412)
   for (const id of decisionHolds.keys()) { openAskCards.add(id); unansweredAskCards.add(id); }
   const outages = await outagesOf(db, now);
   // #C1100: the config's collector.reviewers, which the probe posts (as `look`), so the line names the reviewer the dispatch wakes.
   const reviewers = (await evidenceOf(db, "reviewers"))?.reviewers;
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow), postedFreshMs, reviewers, decisionHolds });
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow), postedFreshMs, reviewers });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
