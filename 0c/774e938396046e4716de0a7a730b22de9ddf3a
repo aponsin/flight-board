@@ -1,0 +1,1 @@
+SECURE #C1418 fold-data-fragments-1124: docs only. 29 docs/DATA.d fragments are removed and the same 29 lines are added to docs/DATA.md: the added and removed line sets are identical, with no new text, no code, no tests and no Worker change, so there is no pack and no mutation check. Linear on main 626622f4. Security 2026-11-24.
