@@ -1,0 +1,1 @@
+SECURE #C1416 sweep-chunk-five: SWEEP_CHUNK 15 -> 5 only; the leased delete lines, -C folders and the shape check are unchanged, and shorter lines lower the risk of a cut paste. Touched test green. Mutation check: pass (chunk 6, 4 and 15 all fail it). Linear on main 73d38c1d. Ships as a Worker deploy, with no env, secret or binding change.
