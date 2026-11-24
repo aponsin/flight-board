@@ -1,0 +1,2 @@
+PASS Quick #C1417 closed-card-no-group-tile from 1185f2c0b437d4d922fbf8c525db4cb6a30cff61: groupReading reads a closed member as done (count and done, never a tile, phase or lead); matches group-rule isOpen and crewColumns; compat sets closed only as true. Mutants: off, any closed key, mutate input, drop member, tiles-only all killed; truthy closed survives, equivalent (closed is only ever true). Full suite 3839 pass 0 fail 1 skipped
+signed-by: Checker 2
