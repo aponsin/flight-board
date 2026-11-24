@@ -42,6 +42,12 @@ test("#C1419: the clear and the /pickup between two checks: a drop from LOW_STAR
   assert.equal(decide([w(300_000), i(LOW_START - 1)]), "picked-up", "just under LOW_START");
 });
 
+test("#C1420: the drop rule's earlier reading: exactly LOW_START counts, and it may be two checks back", () => {
+  assert.equal(decide([w(LOW_START), i(29_000)]), "picked-up", "an earlier reading of exactly LOW_START is a high one");
+  assert.equal(decide([w(300_000), i(50_000), i(29_000)]), "picked-up", "the high reading two checks back");
+  assert.equal(decide([i(20_000), w(300_000), i(29_000)]), "picked-up", "the high reading neither the first nor the last but one: not only the first counts");
+});
+
 test("#C1419: the drop rule leaves the other readings alone", () => {
   assert.equal(decide([w(116_000), i(LOW_START)]), "wait", "not under LOW_START: no drop");
   assert.equal(decide([w(116_000), i(4_999)]), "send", "a fresh clear still under FRESH waits for a /pickup: send");

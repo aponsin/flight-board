@@ -7,6 +7,8 @@
 //   picked-up  - someone already picked it up; stop. Working under FRESH, or (#C498's follow-up: Manager was picked up
 //                before the first check, and Steward then read 14k, 26k, 37k, 52k and waited out all ten minutes) seen
 //                working under LOW_START at an earlier check: a fresh session (before its clear the lead reads far more).
+//                (#C1419) Or a drop from LOW_START or more to under it with no reading under FRESH: the clear and the /pickup both landed
+//                between two checks, so no "working" reading at a low count was ever seen.
 //   wait       - not cleared yet: wait 60 s again.
 //   give-up    - MAX_CHECKS checks done: leave it to the keeper's hourly step 4.
 import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
