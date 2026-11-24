@@ -1,0 +1,2 @@
+PASS Quick #C1416 sweep-chunk-five from 73d38c1d9b8cfcd8893ebdf3bb74f7037e7070d8: SWEEP_CHUNK 5 for remote and local lines; no cap on Terminal ask line count (max ~144 lines, each runs alone); mutants chunk 15/6/4, local slice 15, local step 15 all killed; full suite 3838 pass 0 fail 1 skipped
+signed-by: Checker 2
