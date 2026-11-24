@@ -1,0 +1,2 @@
+PASS Quick #C1418 fold-data-fragments-1124 from 626622f4e3d539869e84a5d6e81cdff545d36c0c: docs/DATA.md equals scripts/data-fragments.mjs --write run on 626622f4 byte for byte; all 29 fragments in once, no old line lost, no extra line, only DATA.d/README.md left; no definition changes. Full suite 3839 pass 0 fail 1 skipped
+signed-by: Checker 2
