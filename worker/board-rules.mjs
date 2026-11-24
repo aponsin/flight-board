@@ -944,9 +944,9 @@ export const shippedBranchesShape = (v) => v !== null && typeof v === "object" &
   && v.repos.every((r) => r !== null && typeof r === "object" && !Array.isArray(r) && Object.keys(r).every((k) => ["name", "dir", "remote", "main", "remoteBranches", "localBranches"].includes(k))
     && typeof r.name === "string" && SW_WORD.test(r.name) && typeof r.dir === "string" && SW_DIR.test(r.dir) && !r.dir.split("/").includes("..")
     && typeof r.remote === "string" && SW_WORD.test(r.remote) && swBranch(r.main) && swRemoteList(r.remoteBranches, r.main) && swList(r.localBranches, r.main));
-export const SWEEP_TITLE = "Shipped branches to delete", SWEEP_CHUNK = 15;
-// The Terminal ask for a posted list: one `git push <remote> --force-with-lease=<b>:<sha> ... --delete ...` line per 15 remote branches (a branch pushed again since the
-// listing no longer has the sha leased, so it is not deleted) and one `git branch -d ...` per 15 local ones (-d refuses an unmerged branch), each a command of its own with its folder (-C), so any line may be run alone. null when there is nothing to delete.
+export const SWEEP_TITLE = "Shipped branches to delete", SWEEP_CHUNK = 5;
+// The Terminal ask for a posted list: one `git push <remote> --force-with-lease=<b>:<sha> ... --delete ...` line per 5 remote branches (a branch pushed again since the
+// listing no longer has the sha leased, so it is not deleted; a line of 15 was too long to paste whole in #T2273) and one `git branch -d ...` per 5 local ones (-d refuses an unmerged branch), each a command of its own with its folder (-C), so any line may be run alone. null when there is nothing to delete.
 export function sweepAsk(value) {
   if (!shippedBranchesShape(value)) return null;
   const commands = [];

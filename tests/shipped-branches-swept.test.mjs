@@ -161,19 +161,19 @@ test("the store accepts the shape and refuses anything else: plain names, a ~/ f
   assert.equal(sweepAsk(withR({ remoteBranches: [{ name: "dev", sha: S1 }] })), null, "a bad probe reading never makes a delete line for dev");
 });
 
-test("the ask: one delete line per 15 remote branches and per 15 local ones, each with its own folder, remote delete leased on the sha seen; the Worker accepts it as a Terminal ask", () => {
+test("the ask: one delete line per 5 remote branches and per 5 local ones, each with its own folder, remote delete leased on the sha seen; the Worker accepts it as a Terminal ask (#T2273: 15 in a line was too long to paste whole)", () => {
   const list = (n, p) => Array.from({ length: n }, (_, i) => `${p}${i}`);
   const remote = list(31, "r").map((name, i) => ({ name, sha: String(i % 10).repeat(40) }));
-  const v = { at: T, repos: [{ name: "demo-repo", dir: "~/Code/demo-repo", remote: "origin", main: "main", remoteBranches: remote, localBranches: list(2, "l") }, { name: "other", dir: "~/Code/other", remote: "up", main: "main", remoteBranches: [], localBranches: ["x"] }] };
+  const v = { at: T, repos: [{ name: "demo-repo", dir: "~/Code/demo-repo", remote: "origin", main: "main", remoteBranches: remote, localBranches: list(7, "l") }, { name: "other", dir: "~/Code/other", remote: "up", main: "main", remoteBranches: [], localBranches: ["x"] }] };
   const ask = sweepAsk(v);
-  assert.equal(ask.title, `${SWEEP_TITLE}: 34 on main already`);
-  assert.equal(ask.commands.length, 3 + 1 + 1);
+  assert.equal(ask.title, `${SWEEP_TITLE}: 39 on main already`);
+  assert.equal(ask.commands.length, 7 + 2 + 1, "31 remote = six lines of 5 and one of 1; 7 local = 5 and 2; one more folder");
   const line = (chunk) => `git -C ~/Code/demo-repo push origin ${chunk.map((b) => `--force-with-lease=${b.name}:${b.sha}`).join(" ")} --delete ${chunk.map((b) => b.name).join(" ")}`;
-  assert.equal(ask.commands[0], line(remote.slice(0, 15)));
-  assert.equal(ask.commands[1], line(remote.slice(15, 30)));
-  assert.equal(ask.commands[2], line(remote.slice(30)), "the last chunk holds the remaining one");
-  assert.equal(ask.commands[3], "git -C ~/Code/demo-repo branch -d l0 l1");
-  assert.equal(ask.commands[4], "git -C ~/Code/other branch -d x");
+  for (let k = 0; k < 6; k++) assert.equal(ask.commands[k], line(remote.slice(k * 5, k * 5 + 5)), `remote line ${k + 1} holds 5`);
+  assert.equal(ask.commands[6], line(remote.slice(30)), "the last chunk holds the remaining one");
+  assert.equal(ask.commands[7], "git -C ~/Code/demo-repo branch -d l0 l1 l2 l3 l4");
+  assert.equal(ask.commands[8], "git -C ~/Code/demo-repo branch -d l5 l6");
+  assert.equal(ask.commands[9], "git -C ~/Code/other branch -d x");
   assert.equal(askRefusal({ type: "Terminal", title: ask.title, asked_by: "Manager", commands: ask.commands }, T), null, "the ask rules take it (no bare cd, every line alone)");
   assert.equal(sweepAsk({ at: T, repos: [] }), null);
   assert.equal(sweepAsk({ at: T, repos: [{ ...v.repos[0], remoteBranches: [], localBranches: [] }] }), null);
