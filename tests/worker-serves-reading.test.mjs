@@ -42,7 +42,8 @@ function laws(view, label) {
   for (const list of Object.values(columns)) list.forEach((it, i) => assert.equal(it.n, i + 1, `${label}: numbers run 1..n`));
   // Groups: a group's tile at each phase is the fold of its members' tiles (all agree: that tile; else the first in TILE_ORDER), counted over the members' readings.
   for (const g of c.groups) {
-    const members = g.members.map((id) => byId.get(id));
+    // #C1417: a closed member is a done member and holds no tile.
+    const members = g.members.map((id) => byId.get(id)).map((m) => (m.closed === true && m.state !== "done" ? { ...m, state: "done" } : m));
     assert.equal(g.count, members.length); assert.equal(g.done, members.filter((m) => m.state === "done").length);
     for (const p of STRIP) {
       const tiles = members.map((m) => tileAt(m, p)), all = new Set(tiles);
@@ -101,6 +102,24 @@ test("groupReading: cards that agree give that tile, cards that differ give the 
   assert.deepEqual(groupReading([]).count, 0);
   assert.equal(groupReading([r("live", "done"), r("live", "done")]).phase, "live");
   assert.equal(tileOf(r("ship", "waiting", "pack")), "afterwork"); assert.equal(tileOf(r("ship", "waiting", "ask")), "ask"); assert.equal(tileOf(r("ship", "waiting", "land")), "wait");
+});
+
+test("groupReading: a closed member counts as done and never holds a tile, the phase or the lead (#C1417: board-roll-1's Checker tile held by a closed card still read sent back)", () => {
+  const r = (phase, state, wait = null, extra = {}) => ({ id: "x", phase, state, wait, working: false, ...extra });
+  const closedStuck = r("checker", "rework", null, { closed: true, closedAt: 1 });
+  const g = groupReading([closedStuck, r("ship", "waiting", "pack")]);
+  assert.equal(g.tiles.checker, "done", "the open card is past Checker; the closed card's old reading does not hold it");
+  assert.equal(g.tiles.ship, "afterwork", "the open card's own tile at ship");
+  assert.equal(g.phase, "ship", "the phase is the open card's");
+  assert.equal(g.count, 2); assert.equal(g.done, 1, "the closed card is a done member");
+  assert.equal(g.state, "waiting", "the lead is the open card");
+  const same = groupReading([closedStuck, r("checker", "waiting", "turn")]);
+  assert.equal(same.tiles.checker, "wait", "an open card at a wait still holds its tile");
+  const allClosed = groupReading([closedStuck, r("build", "waiting", "turn", { closed: true })]);
+  assert.ok(STRIP.every((p) => allClosed.tiles[p] === "done"), "a group of only closed cards is done at every phase");
+  assert.equal(allClosed.done, 2); assert.equal(allClosed.phase, "live");
+  assert.equal(groupReading([r("checker", "rework", null, { closed: false })]).tiles.checker, "wait", "closed: false is an open card");
+  assert.equal(closedStuck.state, "rework", "the input reading is not changed");
 });
 
 test("crewColumns: one column per role, the card a session is on is number 1, a stale card never blinks, done and closed cards are in none", () => {

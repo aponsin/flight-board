@@ -38,8 +38,10 @@ export function tileAt(r, phase) {
 const rank = (tile) => TILE_ORDER.indexOf(tile);
 // A group's row: per phase the cards' tile when they agree, else the first tile in TILE_ORDER that any card has; its count is members done of members; its phase is the
 // least-finished card's. Only the members' readings go in. `readings` is the members' [{ id, phase, state, wait, working, ... }].
+// #C1417 (board-roll-1's Checker tile stayed orange for a card closed days ago still read "sent back" at checker): a card the store closed is a done member of its group, whatever its last
+// reading says, so it never holds a tile, the phase or the lead; it still counts in `count` and `done`.
 export function groupReading(readings) {
-  const rs = (readings ?? []).filter(Boolean);
+  const rs = (readings ?? []).filter(Boolean).map((r) => (r.closed === true && r.state !== "done" ? { ...r, state: "done" } : r));
   const tiles = Object.fromEntries(STRIP.map((p) => [p, rs.length ? rs.map((r) => tileAt(r, p)).sort((a, b) => rank(a) - rank(b))[0] : "future"]));
   const open = rs.filter((r) => r.state !== "done");
   const furthest = (r) => STRIP.indexOf(r.phase);
