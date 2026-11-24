@@ -28,6 +28,10 @@ export function decide(readings) {
   if (rs.slice(0, -1).some((r) => r.state === "working" && tokensOf(r) < LOW_START)) return "picked-up";
   if (last.state === "idle" && t < FRESH) return "send";
   if (last.state === "working" && t < FRESH) return "picked-up";
+  // #C1419: the clear and the /pickup both landed between two checks (Steward read 116k working, then 29k idle a minute later): no reading
+  // under FRESH, but a drop from LOW_START or more to under it can only be a fresh session that has already worked. A clear that still
+  // reads under FRESH is the "send" case above and is not touched.
+  if (t < LOW_START && rs.slice(0, -1).some((r) => tokensOf(r) >= LOW_START) && !rs.some((r) => tokensOf(r) < FRESH)) return "picked-up";
   return rs.length >= MAX_CHECKS ? "give-up" : "wait";
 }
 

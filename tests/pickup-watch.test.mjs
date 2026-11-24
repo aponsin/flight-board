@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { decide, MAX_CHECKS } from "../scripts/pickup-watch.mjs";
+import { decide, MAX_CHECKS, FRESH, LOW_START } from "../scripts/pickup-watch.mjs";
 
 const w = (tokens) => ({ state: "working", tokens }), i = (tokens) => ({ state: "idle", tokens });
 
@@ -33,6 +33,21 @@ test("not yet cleared waits: a big session working, steady or shrinking, or grow
   assert.equal(decide([w(300_000), i(300_000), w(320_000)]), "wait", "an idle reading between");
   assert.equal(decide([w(20_000)]), "wait", "one low reading alone is no pickup yet");
   assert.equal(decide([]), "wait");
+});
+
+test("#C1419: the clear and the /pickup between two checks: a drop from LOW_START or more to under it, no reading under FRESH, is picked up", () => {
+  assert.equal(decide([w(116_000), i(29_000)]), "picked-up", "Steward's case: 116k working, then 29k idle a minute later");
+  assert.equal(decide([w(116_000), w(29_000)]), "picked-up");
+  assert.equal(decide([w(300_000), w(280_000), i(FRESH)]), "picked-up", "exactly FRESH is not under it");
+  assert.equal(decide([w(300_000), i(LOW_START - 1)]), "picked-up", "just under LOW_START");
+});
+
+test("#C1419: the drop rule leaves the other readings alone", () => {
+  assert.equal(decide([w(116_000), i(LOW_START)]), "wait", "not under LOW_START: no drop");
+  assert.equal(decide([w(116_000), i(4_999)]), "send", "a fresh clear still under FRESH waits for a /pickup: send");
+  assert.equal(decide([w(116_000), i(0), i(29_000)]), "wait", "a reading under FRESH came between: the clear was seen, no pickup shown yet");
+  assert.equal(decide([i(20_000), i(29_000)]), "wait", "no earlier reading at LOW_START or more: no drop");
+  assert.equal(decide([w(116_000), w(120_000)]), "wait", "not a drop");
 });
 
 test("ten checks without an answer: give up to the keeper", () => {
