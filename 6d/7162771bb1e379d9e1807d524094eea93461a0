@@ -1,0 +1,1 @@
+SECURE #C1420 pickup-watch-boundary-tests: tests and a header comment only, with no change to decide(). Linear on main 2ae9c742. Touched test green. Mutation check: pass, my 7 breaks of the #C1419 rule all fail it now, including >= LOW_START read as >, which closes my #C1419 INFO. Security 2026-11-24.
