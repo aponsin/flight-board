@@ -1,0 +1,3 @@
+PASS Quick #C1419 pickup-watch-fast-clear from 0c774e938396046e4716de0a7a730b22de9ddf3a: one guard in decide(); a drop from LOW_START or more to under it, with no reading under FRESH, reads picked-up; send, the earlier-working rule and wait cases unchanged. Full suite 3841 pass 0 fail 1 skipped. Mutations 7/8 caught; survivor: earlier reading >= LOW_START to > (no test at exactly 60k), LOW; slice(0,-1) to whole list is equivalent. INFO: a compaction (not a clear) that drops a working session under 60k now reads picked-up one check earlier than before (the earlier-working rule already did so a check later).
+
+signed-by: Checker
