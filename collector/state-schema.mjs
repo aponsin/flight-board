@@ -64,7 +64,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "headAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "issueBase", "tipIssues", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "headAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "issueBase", "tipIssues", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "cards", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
 // #C1387: the sources a card's reading can fail to read (a git or GitHub call that failed, which is not the answer "no"). A new source is one word added here (and to UNKNOWN_BY in worker/reading.mjs
 // when the phase rests on it); #C1395 adds notes, install, pair (each a source a phase rests on: the Worker reads them as unknown) and ci (a flag: the card's own ci word and the ship tile say it).
 export const UNREAD_SOURCES = ["main", "deploy", "version", "stack", "start", "behind", "notes", "install", "pair", "ci"];
@@ -150,6 +150,8 @@ const AGENT = {
   lastActivityAt: nullOr(isTime),
   tool: nullOr((v) => TOOLS.includes(v) || v === "mcp" || v === "other"),
   card: nullOr(isId),
+  // #C1427: the cards the session is on when it names two or more in its current turn (newest first, at most 6, the first is `card`); left out otherwise.
+  cards: (v) => Array.isArray(v) && v.length >= 2 && v.length <= 6 && v.every(isId),
   since: nullOr(isTime),
   by: (v) => v === "title" || v === "spawn",
   // #C1122: true only: the role's session has its Remote Control switch turned off (the app's session file says so). Left out otherwise.

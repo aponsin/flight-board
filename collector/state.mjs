@@ -167,6 +167,29 @@ export function cardIn(entries, ids, nums) {
   return null;
 }
 
+// #C1427 (11-24: a session that works several cards at once, Release shipping a candidate that carries four, read working only on the newest one it named): the cards a session is on, newest first,
+// each named (as cardIn names one) in the prompt, the agent's own words or its tool calls of the current turn: the entries since the last prompt a person or another session typed (a task
+// notification is no prompt: the turn it wakes is the same work). Only when two or more are named: one card is `card` alone. At most SESSION_CARDS, so a session that lists the board names no crowd.
+export const SESSION_CARDS = 6;
+const isNotice = (e) => e.type === "user" && typeof e.message.content === "string" && e.message.content.startsWith("<task-notification>");
+export function cardsIn(entries, ids, nums) {
+  const known = [...ids].filter((id) => CARD_ID.test(id) && id.length <= CARD_ID_MAX).sort((a, b) => b.length - a.length);
+  const re = new RegExp(`${known.length ? `(?<![A-Za-z0-9-])(${known.join("|")})(?![A-Za-z0-9-])|` : ""}#C(\\d{1,6})(?!\\d)`, "g");
+  const start = Math.max(0, entries.findLastIndex((e) => isPrompt(e) && !isNotice(e)));
+  const out = [];
+  for (let k = entries.length - 1; k >= start && out.length < SESSION_CARDS; k--) {
+    let text = "";
+    try { text = JSON.stringify(withoutResults(entries[k].message.content) ?? ""); } catch { continue; }
+    const named = [];
+    for (const m of text.matchAll(re)) {
+      const id = m[1] ?? nums.get(Number(m[2]));
+      if (id && CARD_ID.test(id) && id.length <= CARD_ID_MAX && !named.includes(id)) named.push(id);
+    }
+    for (const id of named.reverse()) if (!out.includes(id) && out.length < SESSION_CARDS) out.push(id);
+  }
+  return out.length > 1 ? out : [];
+}
+
 // A turn stopped on a call the person must answer (#C526: Mainsite's site approval sat from 05:50Z to 15:49Z, read as
 // idle): mid-turn and quiet over WORKING_QUIET_MS, with a tool call since the last prompt that has no result. A subagent
 // call (Agent) may run that long on its own, so it never counts. The first such call ({ b, e }), else null.
@@ -242,7 +265,8 @@ export function activity(entries, { mtimeMs, now, ids, nums, notified = null }) 
   let tool = null;
   for (let k = entries.length - 1; k >= 0 && !tool; k--) if (entries[k].type === "assistant") tool = toolClass(blocks(entries[k]).filter((b) => b.type === "tool_use").at(-1)?.name);
   const since = state === "working" ? timeOf(entries.findLast(isPrompt)) : timeOf(entries.findLast((e) => e.type === "assistant"));
-  return { state, tool, card: cardIn(entries, ids, nums), since, prompt: promptSince(entries, { mtimeMs, now }), promptTool: promptTool(entries, { mtimeMs, now }), tokens: contextTokens(entries) };
+  const cards = cardsIn(entries, ids, nums);
+  return { state, tool, card: cardIn(entries, ids, nums), ...(cards.length ? { cards } : {}), since, prompt: promptSince(entries, { mtimeMs, now }), promptTool: promptTool(entries, { mtimeMs, now }), tokens: contextTokens(entries) };
 }
 
 // Every roster role's agent, from the session whose id the config holds for it (sessionIds, #C633), never from a recency
@@ -260,7 +284,7 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
     const p = transcriptPath(homeDir, s.cwd, s.transcript);
     const tail = p ? readTail(p, TAIL_BYTES, uid) : null;
     const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums, notified: noticeIds(tail) }) : { state: "unknown", tool: null, card: null, since: null };
-    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(by ? { by } : {}), ...(s.rcOff === true ? { rcOff: true } : {}) };
+    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, ...(a.cards ? { cards: a.cards } : {}), since: a.since, ...(by ? { by } : {}), ...(s.rcOff === true ? { rcOff: true } : {}) };
     if (prompts && a.prompt != null) prompts[role] = a.prompt;
     if (tools && a.promptTool != null) tools[role] = a.promptTool;
     if (tokens && a.tokens != null) tokens[role] = a.tokens;

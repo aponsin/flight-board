@@ -99,8 +99,10 @@ export function branchReadings(list) {
 }
 
 const pushed = (e) => !!e && typeof e === "object" && (typeof e.headSha === "string" || typeof e.headSha12 === "string");
-const isWorking = (agents, role, cardId) => !!role && agents?.[role]?.state === "working" && agents[role].card === cardId;
-const busyElsewhere = (agents, role, cardId) => !!role && agents?.[role]?.state === "working" && !!agents[role].card && agents[role].card !== cardId;
+// #C1427: a session on several cards (the probe's `cards`, two or more, `card` the newest) is on each of them; a session on one has `card` alone.
+const onCard = (a, cardId) => a.card === cardId || (Array.isArray(a.cards) && a.cards.includes(cardId));
+const isWorking = (agents, role, cardId) => !!role && agents?.[role]?.state === "working" && onCard(agents[role], cardId);
+const busyElsewhere = (agents, role, cardId) => !!role && agents?.[role]?.state === "working" && !!agents[role].card && !onCard(agents[role], cardId);
 
 // `with`: one role. The card's owner at plan, build, test and rework; at a review phase the role that holds the open claim on the tip, else the repository's reviewer
 // from the config (#C1100), else the lane's role; the release role at land, ship and the live read; the owner of the board at install and ask.
