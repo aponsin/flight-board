@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { stateErrors, pickState, toolClass, MAX_BYTES } from "../collector/state-schema.mjs";
-import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS, RETRY_MS } from "../collector/state.mjs";
+import { cardIn, activity, noticeIds, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS, RETRY_MS } from "../collector/state.mjs";
 import worker, { sha256hex, secretName, RATE_MS, TOOL, WAKE_TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
 import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION, secretsStep, Stop, stopLine, stepCommand } from "../scripts/state-install.mjs";
 import { pageMcpErrors, PAGE_MCP, verdict } from "../scripts/board-release.mjs";
@@ -271,6 +271,46 @@ test("the probe: a turn that ended with its own background run still going reads
   assert.equal(at(watch, T + 60_000), "idle", "the dispatch watch runs for hours by design: it is never work");
   const fg = [prompt, entry("assistant", [{ type: "tool_use", id: "f1", name: "Bash", input: { command: "npm test", run_in_background: false } }], T + 1000, { stop_reason: "tool_use" }), entry("user", [{ type: "tool_result", tool_use_id: "f1", content: "ok" }], T + 2000), ended(T + 3000)];
   assert.equal(at(fg, T + 60_000), "idle", "a call that was not a background run changes nothing");
+  // Checker 2's three surviving mutants on 23644dc6.
+  const future = [prompt, bg("t9", "npm test", T + 3600e3), started("t9", T + 3600e3 + 1000), ended(T + 3600e3 + 2000)];
+  assert.equal(at(future, T + 60_000), "idle", "a call dated ahead of this clock is no run in progress");
+  const agent = [prompt, entry("assistant", [{ type: "tool_use", id: "a1", name: "Agent", input: { prompt: "x", run_in_background: true } }], T + 1000, { stop_reason: "tool_use" }), started("a1", T + 2000), ended(T + 3000)];
+  assert.equal(at(agent, T + 60_000), "idle", "only a Bash call is a background run here");
+  const bare = entry("user", "the run <tool-use-id>t1</tool-use-id> is still going, says a person", T + 90_000);
+  assert.equal(at([...run, bare, ended(T + 95_000)], T + 100_000), "working", "an id with no <task-notification> around it ends nothing");
+});
+
+// Checker 2's F1 on 23644dc6: a notification that arrives while the turn runs is two other transcript entries, which lastEntries drops (the real shapes, ids made up).
+test("the probe: a background run's notification that arrived mid-turn (queue-operation, queued_command attachment) ends the run too", () => {
+  const body = (id) => `<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>${id}</tool-use-id>\n<output-file>/tmp/x/b1.output</output-file>\n<status>completed</status>\n<summary>Background command "Run the full test suite" completed (exit code 0)</summary>\n</task-notification>`;
+  const queued = (id) => JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp: new Date(T + 90_000).toISOString(), sessionId: "s1", content: body(id) });
+  const attached = (id) => JSON.stringify({ type: "attachment", attachment: { type: "queued_command", prompt: body(id), commandMode: "task-notification" }, timestamp: new Date(T + 90_000).toISOString() });
+  const asUser = (id) => JSON.stringify(entry("user", body(id), T + 90_000));
+  const lines = (...ls) => ({ text: ls.join("\n") + "\n", whole: true });
+  assert.deepEqual([...noticeIds(lines(queued("t1")))], ["t1"], "the queue-operation line");
+  assert.deepEqual([...noticeIds(lines(attached("t2")))], ["t2"], "the queued_command attachment");
+  assert.deepEqual([...noticeIds(lines(asUser("t3")))], ["t3"], "the user entry of a notification that woke an idle turn");
+  assert.deepEqual([...noticeIds(lines(queued("t1"), attached("t1"), "not json", JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: body("t4") }] } })))], ["t1"], "both lines for one run are one id; an assistant's own words and a broken line name none");
+  assert.deepEqual([...noticeIds(lines(JSON.stringify({ type: "queue-operation", operation: "dequeue" }), JSON.stringify({ type: "attachment", attachment: { type: "file", prompt: body("t5") } })))], [], "a dequeue has no content; another attachment is no notice");
+  assert.equal(noticeIds({}).size, 0);
+  const prompt = entry("user", "review #C1", T);
+  const call = entry("assistant", [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "npm test", run_in_background: true } }], T + 1000, { stop_reason: "tool_use" });
+  const ended = entry("assistant", [{ type: "text", text: "done" }], T + 95_000, { stop_reason: "end_turn" });
+  const run = [prompt, call, entry("user", [{ type: "tool_result", tool_use_id: "t1", content: "Command running in background" }], T + 2000), ended];
+  const at = (notified) => activity(run, { mtimeMs: T + 95_000, now: T + 100_000, ids, nums, notified }).state;
+  assert.equal(at(null), "working", "no notice read: the run is still going");
+  assert.equal(at(noticeIds(lines(queued("t1")))), "idle", "the queued notice ends it, the finished run reads idle (was: working until 15 minutes after the call)");
+  assert.equal(at(noticeIds(lines(attached("t1")))), "idle", "the attachment too");
+  assert.equal(at(noticeIds(lines(queued("t9")))), "working", "another run's notice ends nothing");
+  // The wiring: the roster's agent reads the notice from its own transcript file.
+  const { homeDir, root, session } = studio();
+  const e = (type, content, at, extra) => entry(type, content, at, extra);
+  const calls = [e("user", "review #C420", T - 90e3), e("assistant", [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "npm test", run_in_background: true } }], T - 80e3, { stop_reason: "tool_use" }), e("user", [{ type: "tool_result", tool_use_id: "t1", content: "running" }], T - 79e3), e("assistant", [{ type: "text", text: "done" }], T - 10e3, { stop_reason: "end_turn" })];
+  session(1, "Checker", calls);
+  session(2, "Builder", [...calls, { type: "queue-operation", operation: "enqueue", timestamp: new Date(T - 20e3).toISOString(), content: body("t1") }]);
+  const agents = agentStates({ roles: ["Checker", "Builder"], sessions: appSessions(root), homeDir, now: T, ids, nums });
+  assert.equal(agents.Checker.state, "working", "its run is still going");
+  assert.equal(agents.Builder.state, "idle", "its run's notice is in its transcript: over");
 });
 
 // A home folder with the app's session files and transcripts, for agentStates and appSessions.

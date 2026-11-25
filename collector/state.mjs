@@ -194,16 +194,35 @@ export function promptTool(entries, opts) {
 // #C1423 (the owner, 11-24: #C1421 read "waits for Checker" while Checker's npm test ran): a turn that ends with a background command still running
 // (a Bash call with input.run_in_background true, whose tool-use id no <task-notification> has named yet) is the session's work going on, not an idle
 // session, for up to WORKING_QUIET_MS from the call. The dispatch watch is a background command that runs for hours by design, so it never counts.
+// Checker 2's F1 on 23644dc6: a notification that arrives WHILE the turn runs is not a user entry in the transcript: it is {"type":"queue-operation","operation":"enqueue","content":"<task-notification>..."} and
+// {"type":"attachment","attachment":{"type":"queued_command","prompt":"<task-notification>..."}}, which lastEntries drops. noticeIds reads those lines (and the user entry of a notification that woke an idle
+// turn) from the tail itself, and backgroundRun takes the set, so a finished run is no longer work.
 const NOTIFIED = /<tool-use-id>([^<]{1,100})<\/tool-use-id>/g;
-export function backgroundRun(entries, { now }) {
-  const notified = new Set();
+const noticeOf = (e) => {
+  if (!plain(e)) return "";
+  if (e.type === "queue-operation") return typeof e.content === "string" ? e.content : "";
+  if (e.type === "attachment") return plain(e.attachment) && e.attachment.type === "queued_command" && typeof e.attachment.prompt === "string" ? e.attachment.prompt : "";
+  if (e.type === "user") { try { return JSON.stringify(plain(e.message) ? e.message.content ?? "" : ""); } catch { return ""; } }
+  return "";
+};
+const noticedIn = (text, into) => { if (text.includes("<task-notification>")) for (const m of text.matchAll(NOTIFIED)) into.add(m[1]); return into; };
+export function noticeIds(tail) {
+  const out = new Set(), text = String(tail?.text ?? "");
+  if (!text.includes("<task-notification>")) return out;
+  for (const l of text.split("\n")) {
+    if (!l.includes("<task-notification>")) continue;
+    let e;
+    try { e = JSON.parse(l); } catch { continue; }
+    noticedIn(noticeOf(e), out);
+  }
+  return out;
+}
+export function backgroundRun(entries, { now, notified: seen = null }) {
+  const notified = new Set(seen ?? []);
   const calls = [];
   for (const e of entries) {
-    if (e.type === "user") {
-      let text = "";
-      try { text = JSON.stringify(e.message.content ?? ""); } catch { continue; }
-      if (text.includes("<task-notification>")) for (const m of text.matchAll(NOTIFIED)) notified.add(m[1]);
-    } else if (e.type === "assistant") {
+    if (e.type === "user") noticedIn(noticeOf(e), notified);
+    else if (e.type === "assistant") {
       for (const b of blocks(e)) {
         const i = b.input;
         if (b.type === "tool_use" && b.name === "Bash" && typeof b.id === "string" && plain(i) && i.run_in_background === true && !String(i.command ?? "").includes("wake-watch.mjs")) calls.push({ id: b.id, at: timeOf(e) });
@@ -215,11 +234,11 @@ export function backgroundRun(entries, { now }) {
 
 // One role's activity from its transcript's last entries: { state, tool, card, since, prompt, promptTool } (prompt:
 // promptSince's time, promptTool its class; they stay on this machine, never in the state that leaves).
-export function activity(entries, { mtimeMs, now, ids, nums }) {
+export function activity(entries, { mtimeMs, now, ids, nums, notified = null }) {
   const last = entries.at(-1);
   if (!last) return { state: "unknown", tool: null, card: null, since: null, prompt: null, promptTool: null, tokens: null };
   const midTurn = last.type === "user" || (last.type === "assistant" && last.message.stop_reason === "tool_use");
-  const state = (midTurn && now - mtimeMs <= WORKING_QUIET_MS) || backgroundRun(entries, { now }) ? "working" : "idle";
+  const state = (midTurn && now - mtimeMs <= WORKING_QUIET_MS) || backgroundRun(entries, { now, notified }) ? "working" : "idle";
   let tool = null;
   for (let k = entries.length - 1; k >= 0 && !tool; k--) if (entries[k].type === "assistant") tool = toolClass(blocks(entries[k]).filter((b) => b.type === "tool_use").at(-1)?.name);
   const since = state === "working" ? timeOf(entries.findLast(isPrompt)) : timeOf(entries.findLast((e) => e.type === "assistant"));
@@ -240,7 +259,7 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
   const read = (role, s, by) => {
     const p = transcriptPath(homeDir, s.cwd, s.transcript);
     const tail = p ? readTail(p, TAIL_BYTES, uid) : null;
-    const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums }) : { state: "unknown", tool: null, card: null, since: null };
+    const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums, notified: noticeIds(tail) }) : { state: "unknown", tool: null, card: null, since: null };
     out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(by ? { by } : {}), ...(s.rcOff === true ? { rcOff: true } : {}) };
     if (prompts && a.prompt != null) prompts[role] = a.prompt;
     if (tools && a.promptTool != null) tools[role] = a.promptTool;
