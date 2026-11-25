@@ -313,6 +313,18 @@ test("the probe: a background run's notification that arrived mid-turn (queue-op
   assert.equal(agents.Builder.state, "idle", "its run's notice is in its transcript: over");
 });
 
+// #C1430 (Checker 2 on #C1427: agentStates could drop `cards` and no test failed): the roster's agent carries the cards its own transcript's turn names.
+test("agentStates: a session whose turn names two cards carries both as cards; one naming one card has the card alone", () => {
+  const { homeDir, root, session } = studio();
+  session(1, "Release", [entry("user", "ship #C420 and #C405", T - 60e3), entry("assistant", [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "git push" } }], T - 30e3, { stop_reason: "tool_use" })]);
+  session(2, "Checker", [entry("user", "review #C420", T - 60e3), entry("assistant", [{ type: "tool_use", id: "t2", name: "Bash", input: { command: "npm test" } }], T - 30e3, { stop_reason: "tool_use" })]);
+  const agents = agentStates({ roles: ["Release", "Checker"], sessions: appSessions(root), homeDir, now: T, ids, nums });
+  assert.equal(agents.Release.card, "ship-resume");
+  assert.deepEqual(agents.Release.cards, ["ship-resume", "board-state-probe"], "both cards the turn names reach the state");
+  assert.equal(agents.Checker.card, "board-state-probe");
+  assert.equal("cards" in agents.Checker, false, "one card: no list");
+});
+
 // A home folder with the app's session files and transcripts, for agentStates and appSessions.
 function studio() {
   const homeDir = tmp(), root = join(homeDir, "sessions"), org = join(root, "000fe95f-e41f-4a52-af27-c6c82d3c3ba8", "1c304a7d-9ad7-4bc6-910d-2eadc1439655");

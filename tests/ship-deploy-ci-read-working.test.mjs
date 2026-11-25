@@ -2,7 +2,7 @@
 // working while the ship candidate carries it, while a deploy run on main holds its commit, and while its CI is running (DATA.md Tile states: "or CI is running"). Fictional shas and versions.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -95,6 +95,20 @@ test("a card whose landing a deploy run on main holds reads shipping; one no run
   const { git: g2, sha: s2, cfg: cfg2, repo: repo2 } = scratch();
   assert.equal(cardState(card, repo2({ ships: [], deploying: [s2] }), cfg2, T).shipping, false, "not on main: a deploy run of main holds nothing of the card's");
   void g2;
+});
+
+// #C1430 (Checker 2 on #C1426): a deploy run whose commit git can't place (an unknown commit: git exits 128, not 1) is no answer, never "deploying".
+test("a deploy run git can't place against the card's landing is unread: the card does not read shipping", () => {
+  const { git, sha, cfg, repo } = scratch(), card = { id: "board-x", num: 1, level: "Full", phase: "plan" };
+  git(["update-ref", "refs/remotes/origin/main", sha]);
+  assert.equal(cardState(card, repo({ ships: [], deploying: ["f".repeat(40)] }), cfg, T).shipping, false, "git's failure is not a yes");
+  assert.equal(cardState(card, repo({ ships: [], deploying: ["f".repeat(40), sha] }), cfg, T).shipping, true, "another run that holds it still counts");
+});
+
+// #C1430 (Checker 2 on #C1426: removing the call left the suite green): the probe's run puts the ship reads on the team repository right after reading it.
+test("the probe's run calls addShipReads on the team repository it has just read", () => {
+  const src = readFileSync(new URL("../collector/state.mjs", import.meta.url), "utf8");
+  assert.match(src, /repos\[""\] = \{ \.\.\.r, [^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*addShipReads\(repos\[""\], c, now, r\.gh, shipBackoff\);/);
 });
 
 test("the reading: a card is working while CI runs, as while it queues; never on a stale reading, a passed run or a failed one", () => {

@@ -37,6 +37,17 @@ test("cardsIn: at most SESSION_CARDS, so a session that lists the board names no
   assert.equal(cardsIn(e, ids, nums).length, SESSION_CARDS);
 });
 
+// #C1430 (Checker 2 on #C1427): the cap also ends the walk back through a long turn: once SESSION_CARDS are named, older entries are not read.
+test("cardsIn: once it has SESSION_CARDS it reads no older entry of the turn", () => {
+  let read = 0;
+  const older = entry("assistant", [{ type: "text", text: "card-g", toJSON() { read++; return { type: "text", text: "card-g" }; } }], T + 1);
+  const e = [entry("user", "go", T), older, say(names.slice(0, 6).join(" "), T + 2)];
+  assert.deepEqual(cardsIn(e, ids, nums), ["card-f", "card-e", "card-d", "card-c", "card-b", "card-a"]);
+  assert.equal(read, 0, "the entry before the six is never read");
+  cardsIn([entry("user", "go", T), older, say("card-a card-b", T + 2)], ids, nums);
+  assert.equal(read, 1, "with fewer than six it is read: the counter sees reads");
+});
+
 test("activity: `cards` rides with the card only for two or more; the fields it had are as before", () => {
   const a = activity([entry("user", "ship #C100 #C101", T)], { mtimeMs: T, now: T + 1000, ids, nums });
   assert.equal(a.card, "card-b");
