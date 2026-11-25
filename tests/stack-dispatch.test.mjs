@@ -96,8 +96,14 @@ test("a card outside the stack is told to re-cut it on the stack tip", () => {
 
 test("reviewers are held while a card of the repository still has a build turn, then woken once for the stack tip", () => {
   const two = [card("c1-one"), card("c2-two")];
+  // #C1429 (11-24: a READY stack of four was held for hours by a queued card nobody had started): a card with NOTHING pushed has no commit to review behind; it does not hold the stack's review.
   const waiting = world({ cards: [...two, card("c4-next")], ev: { "c1-one": inStack(), "c2-two": inStack() } });
-  assert.deepEqual(who(waiting), ["c4-next:Boardsmith:build"], "a card with nothing pushed is queued: no review yet");
+  assert.deepEqual(who(waiting), ["c1-one:Checker:review", "c2-two:Checker:review", "c4-next:Boardsmith:build"], "a card with nothing pushed is queued: its build turn stays, the stack is reviewed meanwhile");
+  // A card with a branch of its own pushed and still building does hold it: a WIP start push, a tip with no READY, a card outside the stack.
+  const building = (extra) => world({ cards: [...two, card("c4-next")], ev: { "c1-one": inStack(), "c2-two": inStack(), "c4-next": inStack({ phase: "build", lit: [], stack: undefined, headSha12: "444444444444", ...extra }) } });
+  assert.deepEqual(who(building({})), ["c4-next:Boardsmith:build"], "pushed, at build: it holds");
+  assert.deepEqual(who(building({ wipHead: true })), ["c4-next:Boardsmith:build"], "a WIP start push holds too");
+  assert.deepEqual(who(building({ stackHold: true })), ["c4-next:Boardsmith:build"], "a tip with no READY holds");
   const done = world({ cards: two, ev: { "c1-one": inStack(), "c2-two": inStack() } });
   assert.deepEqual(who(done), ["c1-one:Checker:review", "c2-two:Checker:review"]);
   assert.ok(items(done).every((i) => i.sha === TIP), "the review names the stack tip, not each card's own commit");

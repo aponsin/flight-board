@@ -295,12 +295,14 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C1139: a tip whose newest commit says WIP (the probe's wipHead) is a start push, not a READY: no review turn for it, in any repository and with the stack switch on or off.
     const mine = held || e?.wipHead === true ? turns.filter((t) => t.step !== "review") : turns;
     const shown = mine.filter((t) => !(CHECKER_NAME.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
-    cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, stackKey: stackKeyOf(c), inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
+    cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, stackKey: stackKeyOf(c), pushed: hasHeadEvidence(e), inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   // #C1295: a reviewer is held while a card of the SAME repository still has a build turn; another repository's builder does not hold it.
-  const building = new Set(cards.filter((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step))).map((k) => k.stackKey));
+  // #C1429 (11-24: a READY stack of four was held for hours by a queued card nobody had started): only a card with a branch of its own pushed holds the review. A card with nothing pushed has
+  // no commit for a reviewer to wait behind; its builder's turn stays, and the stack is reviewed meanwhile (the next push is a new tip, and waits for its own review).
+  const building = new Set(cards.filter((k) => k.inBoard && k.pushed && k.turns.some((t) => BUILD_STEPS.has(t.step))).map((k) => k.stackKey));
   for (const k of cards) if (k.inStack && building.has(k.stackKey)) k.turns = k.turns.filter((t) => t.step !== "review");
-  for (const k of cards) { delete k.inBoard; delete k.inStack; delete k.stackKey; }
+  for (const k of cards) { delete k.inBoard; delete k.inStack; delete k.stackKey; delete k.pushed; }
   // #C973: at the quota ceiling, no new build work: a build turn is dropped; a fix (rework, reason, outside, recut) and every other turn stay.
   if (stopBuild) for (const k of cards) k.turns = k.turns.filter((t) => t.step !== "build");
   // #C872 (2026-11-10: the owner answered A on #T1782 for #C862 and Builder sat idle 20 minutes; the answer only reached it through Manager's

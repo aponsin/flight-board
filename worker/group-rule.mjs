@@ -87,7 +87,22 @@ export function groupStage(card, cards, evidenceOf, { need = "built", repo = car
 }
 
 // The reading's question: a `built` card whose group is not ready waits for its group; the cards it waits for are [{ id, num }] (the page names them). [] for any other card.
+// #C1429 (11-24: #C1423 and #C1425, stack-ready, read "waits at Checker 15 min, Checker 2 idle" and then "slow with no reason" while the dispatch held their review on purpose): the dispatch (collector/store-dispatch.mjs)
+// withholds the review of a stack card while ANOTHER card of the same repository has a branch of its own pushed and is still being built (a build, rework or outside turn: a WIP start push, a tip with no READY, a
+// step back, a card cut away from the stack). A built card in a stack has that hold as its wait, named: the same `group` wait, so the reading says "Waiting for #C…" and neither stall rule fires. A card with nothing
+// pushed holds nothing (the dispatch's own rule, tests/stack-dispatch.test.mjs). The hold cards that are paused, blocked, dropped, closed or live never count; a hold or an ask on the holder the dispatch also
+// skips is not read here (the wait then names a card whose builder is not woken: still true, it is the one the stack waits for).
+export function stackHoldersFor(card, e, cards, evidence) {
+  if (stageOf(card, e) !== "built" || !e?.stack || typeof e.stack !== "object" || e.stack.outside === true) return [];
+  return (cards ?? []).filter((k) => {
+    if (!k || typeof k.id !== "string" || k.id === card.id || k.dropped || k.done_at || k.paused || (typeof k.blocked_reason === "string" && k.blocked_reason !== "") || !sameRepo(k.repo, card.repo)) return false;
+    const v = evidence?.[k.id];
+    if (!hasHead(v) || phaseOf(v) === "live" || v.onMain === true) return false;
+    return stageOf(k, v) === "unbuilt" || v.stack?.outside === true;
+  }).map((k) => ({ id: k.id, ...(Number.isInteger(k.num) ? { num: k.num } : {}) }));
+}
 export function groupWaitsFor(card, e, cards, evidence) {
   if (stageOf(card, e) !== "built") return [];
-  return groupStage(card, cards, (id) => evidence?.[id], { need: "built", except: card.id }).waitsFor.map(({ id, num }) => ({ id, ...(num !== undefined ? { num } : {}) }));
+  const group = groupStage(card, cards, (id) => evidence?.[id], { need: "built", except: card.id }).waitsFor.map(({ id, num }) => ({ id, ...(num !== undefined ? { num } : {}) }));
+  return [...group, ...stackHoldersFor(card, e, cards, evidence).filter((h) => !group.some((g) => g.id === h.id))];
 }
