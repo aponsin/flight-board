@@ -183,7 +183,7 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
     return out("queued", busyElsewhere(agents, role, card?.id) ? { kind: "turn" } : null, "not started: no push of its own yet");
   }
   // A stale reading is never working: an old reading cannot say a session is on the card now, so it falls through to the wait or the turn it last had.
-  const working = (role) => !stale && (isWorking(agents, role, card.id) || e.ci === "queued" || e.shipping === true);
+  const working = (role) => !stale && (isWorking(agents, role, card.id) || e.ci === "queued" || e.ci === "running" || e.shipping === true); // #C1426: CI running is active (DATA.md, Tile states), as queued is
   // rework (#C1391): FINDINGS on its tip, or a step back with no reason yet: with its owner again, whatever phase is lit. A re-cut after sign-offs is not rework.
   // #C1406 (Checker 2's F2, the owner's third screenshot): a card sent back by findings reads at BUILD, with its owner, and says why in the lane's words ("review findings", or "security finding" from the
   // security lane); `reviewPhase` keeps the lane that sent it back. A step back with no reason yet keeps the phase the probe read.
