@@ -1,0 +1,2 @@
+FINDINGS Quick (board-roll-2 head; #C1425 clean): #C1423 backgroundRun misses a <task-notification> that arrives mid-turn. It is saved as a queue-operation/attachment (queued_command) entry, and lastEntries keeps only user/assistant, so a finished run reads working until call+15 min. Real transcript: run done 06:20, turn ended 06:20:23, activity still working at 06:21 (probe1423.mjs). Fix: read those notices too, with a real-shape test. Minor surviving mutants: c.at<=now, Bash-only, the <task-notification> tag check. Suite 3844 pass 0 fail.
+signed-by: Checker 2
