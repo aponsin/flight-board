@@ -191,13 +191,35 @@ export function promptTool(entries, opts) {
   return w ? toolClass(w.b.name) : null;
 }
 
+// #C1423 (the owner, 11-24: #C1421 read "waits for Checker" while Checker's npm test ran): a turn that ends with a background command still running
+// (a Bash call with input.run_in_background true, whose tool-use id no <task-notification> has named yet) is the session's work going on, not an idle
+// session, for up to WORKING_QUIET_MS from the call. The dispatch watch is a background command that runs for hours by design, so it never counts.
+const NOTIFIED = /<tool-use-id>([^<]{1,100})<\/tool-use-id>/g;
+export function backgroundRun(entries, { now }) {
+  const notified = new Set();
+  const calls = [];
+  for (const e of entries) {
+    if (e.type === "user") {
+      let text = "";
+      try { text = JSON.stringify(e.message.content ?? ""); } catch { continue; }
+      if (text.includes("<task-notification>")) for (const m of text.matchAll(NOTIFIED)) notified.add(m[1]);
+    } else if (e.type === "assistant") {
+      for (const b of blocks(e)) {
+        const i = b.input;
+        if (b.type === "tool_use" && b.name === "Bash" && typeof b.id === "string" && plain(i) && i.run_in_background === true && !String(i.command ?? "").includes("wake-watch.mjs")) calls.push({ id: b.id, at: timeOf(e) });
+      }
+    }
+  }
+  return calls.some((c) => !notified.has(c.id) && Number.isFinite(c.at) && now - c.at <= WORKING_QUIET_MS && c.at <= now);
+}
+
 // One role's activity from its transcript's last entries: { state, tool, card, since, prompt, promptTool } (prompt:
 // promptSince's time, promptTool its class; they stay on this machine, never in the state that leaves).
 export function activity(entries, { mtimeMs, now, ids, nums }) {
   const last = entries.at(-1);
   if (!last) return { state: "unknown", tool: null, card: null, since: null, prompt: null, promptTool: null, tokens: null };
   const midTurn = last.type === "user" || (last.type === "assistant" && last.message.stop_reason === "tool_use");
-  const state = midTurn && now - mtimeMs <= WORKING_QUIET_MS ? "working" : "idle";
+  const state = (midTurn && now - mtimeMs <= WORKING_QUIET_MS) || backgroundRun(entries, { now }) ? "working" : "idle";
   let tool = null;
   for (let k = entries.length - 1; k >= 0 && !tool; k--) if (entries[k].type === "assistant") tool = toolClass(blocks(entries[k]).filter((b) => b.type === "tool_use").at(-1)?.name);
   const since = state === "working" ? timeOf(entries.findLast(isPrompt)) : timeOf(entries.findLast((e) => e.type === "assistant"));

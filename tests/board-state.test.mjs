@@ -251,6 +251,28 @@ test("the probe: working mid-turn, idle at a turn's end or after a quiet quarter
   assert.deepEqual(activity([], { mtimeMs: T, now: T, ids, nums }), { state: "unknown", tool: null, card: null, since: null, prompt: null, promptTool: null, tokens: null });
 });
 
+// #C1423 (#C1421 read "waits for Checker" while Checker's npm test ran in the background): the turn ended on the call's "running in background" result, so the
+// role read idle. The shapes are the real transcript's: the Bash tool_use carries input.run_in_background true, and its end comes back as a user entry
+// holding <task-notification> with the call's <tool-use-id>.
+test("the probe: a turn that ended with its own background run still going reads working, until the run's notification, the cap, or for the dispatch watch never", () => {
+  const prompt = entry("user", "review #C1", T);
+  const bg = (id, command, t) => entry("assistant", [{ type: "tool_use", id, name: "Bash", input: { command, run_in_background: true } }], t, { stop_reason: "tool_use" });
+  const started = (id, t) => entry("user", [{ type: "tool_result", tool_use_id: id, content: "Command running in background with ID: b1." }], t);
+  const ended = (t) => entry("assistant", [{ type: "text", text: "npm test is running" }], t, { stop_reason: "end_turn" });
+  const note = (id, t) => entry("user", `<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>${id}</tool-use-id>\n<status>completed</status>\n</task-notification>`, t);
+  const run = [prompt, bg("t1", "npm test", T + 1000), started("t1", T + 2000), ended(T + 3000)];
+  const at = (es, now) => activity(es, { mtimeMs: T + 3000, now, ids, nums }).state;
+  assert.equal(at(run, T + 60_000), "working", "its test run is going: the session is working");
+  assert.equal(at([...run, note("t1", T + 90_000)], T + 100_000), "working", "the notification is a prompt: the turn it starts is a live one");
+  assert.equal(at([...run, note("t1", T + 90_000), ended(T + 95_000)], T + 100_000), "idle", "the run is over and the turn ended");
+  assert.equal(at([...run, note("t2", T + 90_000), ended(T + 95_000)], T + 100_000), "working", "another run's notification does not end this one");
+  assert.equal(at(run, T + 1000 + WORKING_QUIET_MS + 1), "idle", "a run quiet past the cap is no one's work");
+  const watch = [prompt, bg("w1", "node '/x/scripts/wake-watch.mjs' --role 'Checker' --once --pinned", T + 1000), started("w1", T + 2000), ended(T + 3000)];
+  assert.equal(at(watch, T + 60_000), "idle", "the dispatch watch runs for hours by design: it is never work");
+  const fg = [prompt, entry("assistant", [{ type: "tool_use", id: "f1", name: "Bash", input: { command: "npm test", run_in_background: false } }], T + 1000, { stop_reason: "tool_use" }), entry("user", [{ type: "tool_result", tool_use_id: "f1", content: "ok" }], T + 2000), ended(T + 3000)];
+  assert.equal(at(fg, T + 60_000), "idle", "a call that was not a background run changes nothing");
+});
+
 // A home folder with the app's session files and transcripts, for agentStates and appSessions.
 function studio() {
   const homeDir = tmp(), root = join(homeDir, "sessions"), org = join(root, "000fe95f-e41f-4a52-af27-c6c82d3c3ba8", "1c304a7d-9ad7-4bc6-910d-2eadc1439655");
