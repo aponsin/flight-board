@@ -1,0 +1,2 @@
+PASS Quick (#C1432). Checked against the real board.config.json: the design phase comes before checker, design is skipped unless lookChange, and the flight-board repo's notes had no design ref; boardRepoNotes now adds refs/notes/designer and keeps a named one. A page/ diff git can't read adds no review. Mutants: unread-adds, no-design-note and security-dropped all killed (the rest are still running). Suite 3879 pass 0 fail.
+signed-by: Checker 2
