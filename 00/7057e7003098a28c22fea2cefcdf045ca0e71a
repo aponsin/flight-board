@@ -1,0 +1,2 @@
+PASS Quick (board-roll-5 head: #C1430 + #C1431). #C1430 kills 4 of my 5 earlier survivors on every test file (agentStates cards, the SESSION_CARDS cap, the addShipReads wiring, unread ancestry). Still open, low: addShipReads without Array.isArray(team.ships). #C1431: 3 of 3 killed (aria-describedby moves; both times via mtShort). Suite 3873 pass 0 fail.
+signed-by: Checker 2
