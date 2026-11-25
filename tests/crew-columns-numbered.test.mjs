@@ -139,3 +139,33 @@ test("every badge in Who is on what carries its words as data-ctip for the board
   assert.match(html, /const BUB_REFS="[^"]*\[data-ctip\]/, "the page's hover and focus bubble takes it");
   assert.match(html, /a\.dataset\.ctip!=null\)\{b\.textContent=a\.dataset\.ctip\}/, "its words go in as text, never markup");
 });
+
+// #C1431 (Designer's two nits on #C1425): one badge's words read "06:02 PM" beside "4:42 PM" (two clocks), and the bubble moving to another badge left the first one described by it.
+test("a badge's words give every time one way: the board's Mountain time, no leading zero, as its Since line does", () => {
+  const b = page([card("old", 5, { phaseLog: [{ phase: "build", who: "Boardsmith", start: Date.UTC(2026, 10, 24, 23, 42) }] })]);
+  const now = Date.UTC(2026, 10, 25, 3, 0), at602 = Date.UTC(2026, 10, 25, 1, 2); // 8:00 PM and 6:02 PM in Mountain time (UTC-7), 4:42 PM the build's start
+  const stale = b.crewBadgeTitle({ card: b.state.initiatives[0], state: "here", stale: true, staleSince: at602 }, now);
+  assert.match(stale, /no fresh reading since 6:02\sPM/u);
+  assert.match(stale, /Since 4:42\sPM/u);
+  const busy = b.crewBadgeTitle({ work: true, since: at602, tool: "Bash" }, now);
+  assert.match(busy, /no card since 6:02\sPM \(using Bash\)$/u);
+  for (const t of [stale, busy]) assert.doesNotMatch(t, /\b0\d:\d\d/, "no zero-padded hour");
+});
+
+test("the bubble moving from one badge to another takes its aria-describedby along; hiding it clears the last", () => {
+  const b = loadNames(["cbubShow", "cbubHide"]);
+  const cbub = b.document.getElementById("cbub");
+  cbub.style ??= {};
+  const badge = (words) => { const attrs = new Map(); return { attrs, dataset: { ctip: words }, setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k), getBoundingClientRect: () => ({ left: 10, top: 10, bottom: 30 }) }; };
+  const one = badge("#C1 first"), two = badge("#C2 second");
+  b.cbubShow(one);
+  assert.equal(one.attrs.get("aria-describedby"), "cbub");
+  b.cbubShow(two);
+  assert.equal(cbub.textContent, "#C2 second");
+  assert.equal(two.attrs.get("aria-describedby"), "cbub");
+  assert.equal(one.attrs.has("aria-describedby"), false, "the first badge is no longer described by a bubble that says the second's words");
+  b.cbubShow(two);
+  assert.equal(two.attrs.get("aria-describedby"), "cbub", "showing it again on the same badge keeps it");
+  b.cbubHide();
+  assert.equal(two.attrs.has("aria-describedby"), false);
+});

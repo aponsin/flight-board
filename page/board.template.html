@@ -1240,6 +1240,8 @@ function cbubShow(a){const b=$("cbub");if(!b)return;
   if(a.dataset.tref){if(!threadDoc(a.dataset.tref)&&!threadOf(a.dataset.tref).length&&!itemOf(a.dataset.tref))return;b.innerHTML=threadBubble(a.dataset.tref)}
   else if(a.dataset.ctip!=null){b.textContent=a.dataset.ctip} // #C1425: a badge in Who is on what says its words in the board's own bubble, not the browser's slow title tooltip
   else{const c=state.initiatives.find(i=>i.id===a.dataset.cref);if(!c)return;b.innerHTML=cardBubble(c)}
+  // #C1431 (Designer's nit on #C1425): the bubble moving to another badge or link takes its aria-describedby along, so no element is left described by a bubble that now says another's words.
+  if(cbubFor&&cbubFor.removeAttribute)cbubFor.removeAttribute("aria-describedby");
   b.hidden=false;cbubFor=a;a.setAttribute("aria-describedby","cbub");
   const r=a.getBoundingClientRect(),w=b.offsetWidth,h=b.offsetHeight;let y=r.bottom+6;if(y+h>window.innerHeight-8)y=r.top-h-6;
   b.style.left=Math.max(8,Math.min(r.left,window.innerWidth-w-8))+"px";b.style.top=Math.max(8,y)+"px"}
@@ -2831,12 +2833,13 @@ function crewColumns(now=Date.now()){
     return {name:n,ix,items,idle,idleAt:la&&la.state==="idle"&&la.since!=null?la.since:0}});
   // Busiest first; an agent with nothing open after them, the most recently idle first; ties keep the roster's order.
   return cols.filter(c=>c.items.length).sort((x,y)=>y.items.length-x.items.length||x.ix-y.ix).concat(cols.filter(c=>!c.items.length).sort((x,y)=>y.idleAt-x.idleAt||x.ix-y.ix))}
+// #C1431 (Designer's nit on #C1425: one line read "06:02 PM" beside "4:42 PM"): every time in a badge's words is mtShort's, the board's Mountain time with no leading zero.
 function crewBadgeTitle(it,now){
-  if(it.work)return `Working on something that has no card${it.since!=null?" since "+hhmm(it.since):""}${it.tool?" (using "+it.tool+")":""}`;
+  if(it.work)return `Working on something that has no card${it.since!=null?" since "+mtShort(it.since,now):""}${it.tool?" (using "+it.tool+")":""}`;
   const i=it.card,e=phaseStart(i,i.phase),R=readingOf(i.id),lane=p=>(PHASES.find(x=>x[0]===p)||[,p||""])[1];
   // #C1406 (Designer's F3): a card sent back by a review is lit at Build, so the hover says Build and which review sent it back, never the card row's older phase.
   const ph=R&&R.state==="rework"&&R.phase==="build"&&R.reviewPhase?`${lane("build")} (sent back by ${lane(R.reviewPhase)})`:notStarted(i)?"Queued":lane(i.phase);
-  return [`${Number.isInteger(i.num)?"#C"+i.num+" ":""}${i.name||i.id}`,`Phase: ${ph}${it.state==="now"?" (working now)":it.state==="stuck"?" (stuck)":it.state==="queued"?" (queued)":""}`,it.stale?(Number.isFinite(it.staleSince)?"no fresh reading since "+hhmm(it.staleSince):"no fresh reading"):"",e?"Since "+mtShort(e.start,now):"",i.batch?"Group: "+groupLabel(i.batch):""].filter(Boolean).join(" · ")}
+  return [`${Number.isInteger(i.num)?"#C"+i.num+" ":""}${i.name||i.id}`,`Phase: ${ph}${it.state==="now"?" (working now)":it.state==="stuck"?" (stuck)":it.state==="queued"?" (queued)":""}`,it.stale?(Number.isFinite(it.staleSince)?"no fresh reading since "+mtShort(it.staleSince,now):"no fresh reading"):"",e?"Since "+mtShort(e.start,now):"",i.batch?"Group: "+groupLabel(i.batch):""].filter(Boolean).join(" · ")}
 function crewColumnsHtml(now=Date.now()){
   return `<div class="ccols">${crewColumns(now).map(c=>`<div class="ccol${c.items.length?"":" idle"}" data-agent="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.items.length?c.items.map((it,k)=>`<div class="cit"><span class="cn">${k+1}</span><span class="cb ${it.work?"work":it.state}${it.stale?" read-stale":""}" tabindex="0" data-ctip="${esc(crewBadgeTitle(it,now))}">${it.work?"work":esc(Number.isInteger(it.card.num)?"#C"+it.card.num:it.card.id)}</span></div>`).join(""):`<small>${esc(c.idle)}</small>`}</div>`).join("")}</div>`}
 function renderCrew(){$("crew").innerHTML=crewColumnsHtml(Date.now())}
