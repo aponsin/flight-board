@@ -1238,12 +1238,13 @@ function threadBubble(id,now=Date.now()){const cut=(s,n)=>s.length>n?s.slice(0,n
   return `<b>${n?"#T"+n+" ":""}${esc(cut(threadName(id),120))}</b><br>${esc([on,word,last?dur(now-last.at)+" ago":""].filter(Boolean).join(" · "))}`}
 function cbubShow(a){const b=$("cbub");if(!b)return;
   if(a.dataset.tref){if(!threadDoc(a.dataset.tref)&&!threadOf(a.dataset.tref).length&&!itemOf(a.dataset.tref))return;b.innerHTML=threadBubble(a.dataset.tref)}
+  else if(a.dataset.ctip!=null){b.textContent=a.dataset.ctip} // #C1425: a badge in Who is on what says its words in the board's own bubble, not the browser's slow title tooltip
   else{const c=state.initiatives.find(i=>i.id===a.dataset.cref);if(!c)return;b.innerHTML=cardBubble(c)}
   b.hidden=false;cbubFor=a;a.setAttribute("aria-describedby","cbub");
   const r=a.getBoundingClientRect(),w=b.offsetWidth,h=b.offsetHeight;let y=r.bottom+6;if(y+h>window.innerHeight-8)y=r.top-h-6;
   b.style.left=Math.max(8,Math.min(r.left,window.innerWidth-w-8))+"px";b.style.top=Math.max(8,y)+"px"}
 function cbubHide(){const b=$("cbub");if(b)b.hidden=true;if(cbubFor&&cbubFor.removeAttribute)cbubFor.removeAttribute("aria-describedby");cbubFor=null}
-const BUB_REFS="[data-cref],[data-tref]";
+const BUB_REFS="[data-cref],[data-tref],[data-ctip]";
 document.addEventListener("mouseover",e=>{if(!HOVER())return;const a=e.target.closest&&e.target.closest(BUB_REFS);if(a)cbubShow(a);else if(cbubFor)cbubHide()});
 document.addEventListener("focusin",e=>{const a=e.target.closest&&e.target.closest(BUB_REFS);if(a)cbubShow(a);else if(cbubFor)cbubHide()});
 document.addEventListener("focusout",e=>{if(cbubFor&&e.target===cbubFor)cbubHide()});
@@ -2837,7 +2838,7 @@ function crewBadgeTitle(it,now){
   const ph=R&&R.state==="rework"&&R.phase==="build"&&R.reviewPhase?`${lane("build")} (sent back by ${lane(R.reviewPhase)})`:notStarted(i)?"Queued":lane(i.phase);
   return [`${Number.isInteger(i.num)?"#C"+i.num+" ":""}${i.name||i.id}`,`Phase: ${ph}${it.state==="now"?" (working now)":it.state==="stuck"?" (stuck)":it.state==="queued"?" (queued)":""}`,it.stale?(Number.isFinite(it.staleSince)?"no fresh reading since "+hhmm(it.staleSince):"no fresh reading"):"",e?"Since "+mtShort(e.start,now):"",i.batch?"Group: "+groupLabel(i.batch):""].filter(Boolean).join(" · ")}
 function crewColumnsHtml(now=Date.now()){
-  return `<div class="ccols">${crewColumns(now).map(c=>`<div class="ccol${c.items.length?"":" idle"}" data-agent="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.items.length?c.items.map((it,k)=>`<div class="cit"><span class="cn">${k+1}</span><span class="cb ${it.work?"work":it.state}${it.stale?" read-stale":""}" tabindex="0" title="${esc(crewBadgeTitle(it,now))}">${it.work?"work":esc(Number.isInteger(it.card.num)?"#C"+it.card.num:it.card.id)}</span></div>`).join(""):`<small>${esc(c.idle)}</small>`}</div>`).join("")}</div>`}
+  return `<div class="ccols">${crewColumns(now).map(c=>`<div class="ccol${c.items.length?"":" idle"}" data-agent="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.items.length?c.items.map((it,k)=>`<div class="cit"><span class="cn">${k+1}</span><span class="cb ${it.work?"work":it.state}${it.stale?" read-stale":""}" tabindex="0" data-ctip="${esc(crewBadgeTitle(it,now))}">${it.work?"work":esc(Number.isInteger(it.card.num)?"#C"+it.card.num:it.card.id)}</span></div>`).join(""):`<small>${esc(c.idle)}</small>`}</div>`).join("")}</div>`}
 function renderCrew(){$("crew").innerHTML=crewColumnsHtml(Date.now())}
 // The open cards' order (the owner, 2026-10-26: the most advanced on top): by status (stuck, active, queued, paused),
 // then the furthest phase first in the config's order (ship before security, checker, language, test, build, plan),

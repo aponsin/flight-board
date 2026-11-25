@@ -51,7 +51,7 @@ test("work with no card is a work badge numbered first; its hover says what the 
   const b = page([card("q", 2)], { Steward: { state: "working", card: null, since: NOW - 7 * MIN, lastActivityAt: NOW - 10e3, tool: "Bash" } }, { Steward: [ent(1, "q", 2, { state: "queued" })] });
   assert.deepEqual([...cols(b).find((x) => x.name === "Steward").items], ["work", "2:queued"]);
   const out = b.crewColumnsHtml(NOW);
-  assert.match(out, /<span class="cn">1<\/span><span class="cb work" tabindex="0" title="Working on something that has no card since [^"]*\(using Bash\)">work<\/span>/);
+  assert.match(out, /<span class="cn">1<\/span><span class="cb work" tabindex="0" data-ctip="Working on something that has no card since [^"]*\(using Bash\)">work<\/span>/);
   assert.doesNotMatch(out, /no card</, "it reads work, not no card");
 });
 
@@ -84,8 +84,8 @@ test("a card is drawn only in the column of the doc it is in, not in any other",
 test("a stale entry is drawn grey (read-stale) and its hover says since when", () => {
   const b = page([card("old", 5), card("new", 6)], {}, { Boardsmith: [ent(1, "old", 5, { stale: true, staleSince: NOW - 40 * MIN }), ent(2, "new", 6)] });
   const out = b.crewColumnsHtml(NOW);
-  assert.match(out, /<span class="cb here read-stale"[^>]*title="[^"]*no fresh reading since \d\d:\d\d[^"]*">#C5<\/span>/);
-  assert.match(out, /<span class="cb here" tabindex="0" title="((?!no fresh reading)[^"])*">#C6<\/span>/);
+  assert.match(out, /<span class="cb here read-stale"[^>]*data-ctip="[^"]*no fresh reading since \d\d:\d\d[^"]*">#C5<\/span>/);
+  assert.match(out, /<span class="cb here" tabindex="0" data-ctip="((?!no fresh reading)[^"])*">#C6<\/span>/);
 });
 
 test("a badge blinks (class now) only for an entry with working:true", () => {
@@ -98,7 +98,7 @@ test("a badge blinks (class now) only for an entry with working:true", () => {
 
 test("a card badge's hover gives its title, phase, since when and group", () => {
   const b = page([card("on", 1, { name: "The crew columns", batch: "board-polish-seven", phaseLog: [{ phase: "build", who: "Boardsmith", start: NOW - 3 * 60 * MIN }] })], { Boardsmith: work("on") }, { Boardsmith: [ent(1, "on", 1, { working: true })] });
-  const title = /<span class="cb now" tabindex="0" title="([^"]*)">/.exec(b.crewColumnsHtml(NOW))[1];
+  const title = /<span class="cb now" tabindex="0" data-ctip="([^"]*)">/.exec(b.crewColumnsHtml(NOW))[1];
   assert.match(title, /#C1 The crew columns/);
   assert.match(title, /Phase: [^·]*\(working now\)/);
   assert.match(title, /Since /);
@@ -126,4 +126,16 @@ test("every badge has the same border box, so the dashed work badge is no taller
 test("the scrolling columns fade at the right edge, with padding so the last column is not dimmed at the end", () => {
   assert.match(html, /\.ccols\{[^}]*mask-image:linear-gradient\(to right,#000 calc\(100% - 20px\),transparent\)/);
   assert.match(html, /\.ccols\{[^}]*padding:0 20px 6px 12px/);
+});
+
+// #C1425 (the owner, t-1795565862060): the dashed "work" badge showed the browser's slow title tooltip. Every badge in the panel says its words in the board's own bubble (#cbub), with the
+// words it had.
+test("every badge in Who is on what carries its words as data-ctip for the board's own bubble, and none keeps a slow title", () => {
+  const b = page([card("on", 1, { name: "The crew columns" }), card("q", 2)], { Boardsmith: work("on"), Steward: { state: "working", card: null, since: NOW - 7 * MIN, lastActivityAt: NOW - 10e3, tool: "Bash" } },
+    { Boardsmith: [ent(1, "on", 1, { working: true }), ent(2, "q", 2, { state: "queued" })] });
+  const badges = b.crewColumnsHtml(NOW).match(/<span class="cb [^>]*>/g);
+  assert.equal(badges.length, 3, "two card badges and the work badge");
+  for (const t of badges) { assert.match(t, / data-ctip="[^"]+"/); assert.doesNotMatch(t, / title=/); }
+  assert.match(html, /const BUB_REFS="[^"]*\[data-ctip\]/, "the page's hover and focus bubble takes it");
+  assert.match(html, /a\.dataset\.ctip!=null\)\{b\.textContent=a\.dataset\.ctip\}/, "its words go in as text, never markup");
 });
