@@ -483,14 +483,30 @@ export function shipRuns(gh, now, backoff = { until: 0, wait: BACKOFF_MIN_MS }, 
   const out = [];
   for (const r of runs.filter((x) => plain(x) && RUNNING.includes(String(x.status)) && SHIP_HEAD.test(String(x.displayTitle ?? "")))) {
     out.push(...shipTitlePairs(r.displayTitle));
-    if (git && shippedPattern && /^[0-9a-f]{40}$/.test(String(r.headSha ?? ""))) {
-      try {
-        const re = new RegExp(shippedPattern, "g");
-        for (const s of git(["log", "-5", "--format=%s", r.headSha]).split("\n")) for (const m of s.matchAll(re)) if (m[1] && /^[0-9a-f]{7,40}$/.test(m[2] ?? "")) out.push({ branch: m[1], sha: m[2] });
-      } catch { /* the title's pairs stand */ }
-    }
+    out.push(...commitPairs(git, r.headSha, shippedPattern));
   }
   return out;
+}
+// The "branch@sha" pairs a ship commit's own subjects name (git log -5, the repository's shippedPattern), whole; none when it can't be read.
+export function commitPairs(git, sha, shippedPattern) {
+  const out = [];
+  if (git && shippedPattern && /^[0-9a-f]{40}$/.test(String(sha ?? ""))) {
+    try {
+      const re = new RegExp(shippedPattern, "g");
+      for (const s of git(["log", "-5", "--format=%s", sha]).split("\n")) for (const m of s.matchAll(re)) if (m[1] && /^[0-9a-f]{7,40}$/.test(m[2] ?? "")) out.push({ branch: m[1], sha: m[2] });
+    } catch { /* the title's pairs stand */ }
+  }
+  return out;
+}
+// #C1426: the commits of the deploy runs on now (the repository's deployWorkflow on main: in progress, queued, waiting), from GitHub's own runs. A landed card whose commit is inside one of them is
+// being deployed: a ship in progress, Release's work with no session on it. null when gh can't be asked (a card then says nothing of it, never "not deploying").
+export function deployRuns(gh, workflow, now, backoff = { until: 0, wait: BACKOFF_MIN_MS }, main = "main") {
+  if (!workflow || now < backoff.until) return null;
+  let runs;
+  try { runs = JSON.parse(gh(["run", "list", "--branch", main, "--workflow", workflow, "--limit", "5", "--json", "status,headSha"])); } catch { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); return null; }
+  if (!Array.isArray(runs)) return null;
+  backoff.until = 0; backoff.wait = BACKOFF_MIN_MS;
+  return runs.filter((x) => plain(x) && RUNNING.includes(String(x.status)) && /^[0-9a-f]{40}$/.test(String(x.headSha ?? ""))).map((x) => x.headSha);
 }
 // Whether a ship run is for this card's tip: its branch is the tip's, whole ("admin/x" and "build/x" are two cards), or its sha
 // (7 characters at least: a cut title's short sha alone names nothing) starts the tip or the head.
@@ -525,15 +541,38 @@ export function versionsOn(git, ref, pattern) {
 // The run's reading of the candidate, from the team's repository ({ git, remote, main, tips, ci, live }) and the collector config: the merge
 // check against main, the CI reader, and (#C1038) main's deployed history read lazily, once, for the shipped check. Exported so a test drives
 // the wiring itself.
-export function teamShip(team, c, now) {
+// #C1426: the candidate is read ONCE a run (its CI is a gh call): the cards' ships list takes the cards it carries (candidateShips) and the state's ship tile takes the reading (teamShip).
+const SHIP_READ = new WeakMap();
+export function teamShip(team, c, now) { return teamShipRead(team, c, now).ship; }
+// The pairs of "branch@sha" the open candidate's commit subjects name, [] with no candidate: each is a card in flight in the ship (shipsCard reads them like a run's title).
+export function candidateShips(team, c, now) {
+  const { sha } = teamShipRead(team, c, now);
+  return sha ? commitPairs(team.git, sha, c.shippedPattern) : [];
+}
+// The team repository's reads of a ship in flight, put on it for the cards' reading: the candidate's cards join its ship-run list (only when that list was read: a list that could not be is not made up),
+// and the deploy runs on main are listed (null: not read). A failure here leaves the lists as they were.
+export function addShipReads(team, c, now, gh, backoff) {
+  if (c.candidatePattern && Array.isArray(team.ships)) { try { team.ships = [...team.ships, ...candidateShips(team, c, now)]; } catch { /* the run titles' list stands */ } }
+  if (c.deployWorkflow) { try { team.deploying = deployRuns(gh, c.deployWorkflow, now, backoff, c.mainBranch ?? team.main); } catch { team.deploying = null; } }
+  return team;
+}
+function teamShipRead(team, c, now) {
+  const hit = SHIP_READ.get(team);
+  if (hit && hit.now === now && hit.c === c) return hit.out;
+  const note = {}, ship = teamShipOnce(team, c, now, note), out = { ship, sha: ship ? note.sha ?? null : null };
+  SHIP_READ.set(team, { now, c, out });
+  return out;
+}
+function teamShipOnce(team, c, now, note) {
   let shippedSet = null;
   // #C1377 (Manager: the card's own example, the ship tile's "CI running" an hour after v1.226.22 was live): a candidate read from a repository that was not read fresh this run is marked
   // stale, with the time of its last good read, as the cards are; the badge says so instead of reading current.
   const marked = (r) => (r && team.fresh === false ? { ...r, stale: true, ...(isTimeMs(team.freshAt) ? { staleSince: team.freshAt } : {}) } : r);
-  return marked(shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ancestry(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci,
+  return marked(shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ancestry(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci, note,
     shipped: (v) => { if (!c.versionPattern || !team.live) return false; shippedSet ??= versionsOn(team.git, team.live, c.versionPattern); return shippedSet.has(v); } }));
 }
-export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => false }) {
+// #C1426: `note` (optional) gets sha = the candidate's tip when one is returned, so the cards it carries can be read from its commit subjects.
+export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => false, note = null }) {
   if (!pattern) return null;
   let re;
   try { re = new RegExp(pattern); } catch { return null; }
@@ -548,6 +587,7 @@ export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => 
     // #C1395: the CI word is one of SHIP_CI_STATES (none: no run exists; backoff, capped: no call was made; unread: the call failed); an answer that is none of them is "unread", never "none".
     const r = ci(t.sha), state = r && SHIP_CI_STATES.includes(r.ci) ? r.ci : r && (r.ci === "failed" || r.ci === "cancelled") ? r.ci : "unread";
     if (state === "failed" || state === "cancelled") continue;
+    if (note) note.sha = t.sha;
     return { version: m ? m[1] : null, ci: state, at: t.at, ...(placed === null ? { stale: true } : {}) };
   }
   return null;
@@ -870,7 +910,9 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const wipHead = !onMain && !bare && (wipWord || emptyStart || foreignHead);
   const phase = wipHead ? config.collector.buildPhase : partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
-  const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
+  // #C1426: a landed card whose commit is inside a deploy run on now is shipping too (Release's deploy, no session on the card); a run list that could not be read says nothing.
+  const deploying = onMain && !deployed && Array.isArray(repo.deploying) && typeof repo.git === "function" && /^[0-9a-f]{40}$/.test(String(head.sha)) && repo.deploying.some((s) => ancestry(() => repo.git(["merge-base", "--is-ancestor", head.sha, s])) === true);
+  const shipping = deploying ? true : Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed: deployed && !partsMissing.length });
   // #C731 B4b: the readyAt, firm and waitingFor the old page had. A phase read as build is not firm (a head with no trailer or sign-off,
   // or a bare branch); otherwise readyAt is the head's time, and a tip still in review lists the reviews unsigned on it.
@@ -1684,6 +1726,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // #C1387: a deploy run list that FAILED (gh down, a bad answer) is liveUnread, not "nothing deployed"; an empty list is none.
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { liveUnread = true; } }
     repos[""] = { ...r, ...(liveUnread ? { liveUnread: true } : {}), ci: ciReader(r.gh, now, ciCache, backoff, { batch: true }), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
+    // #C1426 (11-24: #C1421's Ship tile blinked blue, then read "queued" while Release's candidate build/ship-v1.226.27 waited on its CI): a ship candidate in flight carries its cards, and a deploy
+    // run on main carries the cards it holds, so each reads shipping with no session on it. A candidate that can't be read leaves the list as the run titles made it.
+    addShipReads(repos[""], c, now, r.gh, shipBackoff);
     // #C974: the live config follows the copy landed on main (the next run reads it). A failure here never stops the run.
     if (c.configInRepo) { const l = syncLiveConfig({ git: r.git, tip: `${c.remote}/${c.mainBranch}`, file: c.configInRepo, notesRef: r.notes.security, livePath: process.argv[at + 1] }); if (l) console.log(l); }
   }
