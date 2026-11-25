@@ -1,0 +1,4 @@
+SECURE (Security, 2026-11-24): #C1423 #C1425 #C1426 #C1427 #C1429 range origin/main..07bf808b, linear.
+Suite green at the head. 13 mutations: 10 caught; 3 survivors are not gaps (INFO): cardsIn's loop cap is equivalent (the inner push caps at 6); cardsIn's id-shape filter sits behind the schema's tested isId; tipState's deploying sha check guards a sha git itself gave, passed with no shell.
+Checked: data-ctip goes in by textContent and is esc'd in the attribute; deployRuns and the deploying ancestry pass only 40-hex shas to git; gh args fixed; schema cards 2..6 card ids; backgroundRun returns a boolean only; NOTIFIED capture bounded.
+Pack: collector/state-schema.mjs is in the hook closure (gate/stop -> gate/reset) and page/board.template.html is built by gate/publish, so the pack needs a hooks line.
