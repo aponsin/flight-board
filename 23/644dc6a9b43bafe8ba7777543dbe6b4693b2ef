@@ -1,2 +1,2 @@
-FINDINGS Quick member (#C1423): a mid-turn <task-notification> (queue-operation/attachment entry) is dropped by lastEntries, so a finished background run reads working up to 15 min. See the note on head 7d857939.
+PASS Quick member (#C1423; replaces my FINDINGS: fixed by dc83c07b in the same range, and only the head 07bf808b lands).
 signed-by: Checker 2
