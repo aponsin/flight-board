@@ -26,7 +26,7 @@ import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths, pathPhases } from "./review-paths.mjs";
 import { countFindings } from "./findings-count.mjs";
 import { pairsIn, packOf, isBoardRepo } from "./pairs.mjs";
-import { isSignoff, isFindings, securityAlways } from "./signoff.mjs";
+import { isSignoff, isFindings, securityAlways, DESIGNER_REF, PAGE_DIR } from "./signoff.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince, boardTruth } from "./readings.mjs";
@@ -817,6 +817,26 @@ export function branchPaths(repo, mainRef, sha) {
   }
   return memo.get(sha);
 }
+// #C1432 (11-24: #C1425 at 07bf808b and #C1431 at 007057e7 changed page/, were signed by Checker 2 and Security, and never went to Designer, so Release's land refused them for the
+// missing LOOK-OK and Manager sent them by hand): the board's own repository reads Designer's note whatever its config's notes list (the land gate reads refs/notes/designer, collector/signoff.mjs),
+// and a board card needs the design review when its branch changes page/ (the land gate's rule) or the card is marked look_change. Another repository keeps its config.
+export function boardRepoNotes(name, notes) {
+  const n = notes && typeof notes === "object" ? notes : {};
+  return securityAlways(name) && !Object.hasOwn(n, "design") ? { ...n, design: DESIGNER_REF } : n;
+}
+// Whether the branch changed anything under page/ since it left main: true, false, or null when git can't say (then only the card's look_change, by the config's skips, asks for Designer). Once per repository run and tip.
+const PAGE_CHANGED = new WeakMap();
+export function pageChanged(repo, mainRef, sha) {
+  if (typeof repo?.git !== "function" || !/^[0-9a-f]{40}$/.test(String(sha))) return null;
+  if (!PAGE_CHANGED.has(repo)) PAGE_CHANGED.set(repo, new Map());
+  const memo = PAGE_CHANGED.get(repo);
+  if (!memo.has(sha)) {
+    let hit = null;
+    try { hit = String(repo.git(["diff", "--name-only", "--no-renames", `${mainRef}...${sha}`, "--", PAGE_DIR])).split("\n").some((p) => p.trim() !== ""); } catch { /* unread */ }
+    memo.set(sha, hit);
+  }
+  return memo.get(sha);
+}
 // #C996 part 3: the commits a review ref has a note on, read once per repository run (`git notes --ref=X list`, one process) so a
 // card whose tip no review has seen costs no `notes show`. null when the list is empty or unreadable: the caller then asks per commit.
 const NOTE_LISTS = new WeakMap();
@@ -906,7 +926,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const pathNeeds = changed ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, changed) : null;
   // #C1163: a card of the board's own repository always wants Security (the landing job wants SECURE on every commit): a Quick card that touches only collector/, tests/ or docs/ used to have
   // it skipped, read "every review signed" at ship and was never picked by the landing job. It is added to the card's reviews here, so the phase, waitingFor and the dispatch agree.
-  const needs = securityAlways(card.repo) && !onMain && !bare && Object.hasOwn(cfg.collector.notes ?? {}, "security") ? [...new Set([...(pathNeeds ?? reviewsFor(card, cfg)), "security"])] : pathNeeds;
+  // #C1432: and Designer's when the branch changes page/ (boardRepoNotes gives the board's repository the design note to read, so a card marked look_change already asks for it by the config's
+  // skips). A diff git can't read adds nothing: no review is made up from a failed read.
+  const boardCard = securityAlways(card.repo) && !onMain && !bare, hasNote = (p) => Object.hasOwn(cfg.collector.notes ?? {}, p);
+  const boardAdds = boardCard ? [...(hasNote("security") ? ["security"] : []), ...(hasNote("design") && pageChanged(repo, mainRef, tip.sha) === true ? ["design"] : [])] : [];
+  const needs = boardAdds.length ? [...new Set([...(pathNeeds ?? reviewsFor(card, cfg)), ...boardAdds])] : pathNeeds;
   // #C1110: a branch that touches the repository's customer-text paths (the reviewPaths table's language list) sets the card's customer-text flag: the
   // Worker raises it and never clears it, so the language review no longer rests on a box someone ticked at card time.
   const customerText = Array.isArray(changed) && repo.reviewPaths && typeof repo.reviewPaths === "object" && pathPhases(repo.reviewPaths, changed).has("language");
@@ -1758,7 +1782,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   for (const x of c.repos) {
     const installed = installedSha(home(x.installedLink ?? ""));
-    const at = repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes);
+    const at = repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", boardRepoNotes(x.name, x.notes));
     // #C737: the evidence job of the store sets FB_DEPLOY_RULE; the old state job does not, and keeps reading the installed link.
     const dn = {}; // #C1387: dn.failed is set when the ancestry between the two deployed commits could not be read
     const live = process.env.FB_DEPLOY_RULE === "1" ? deployedSha(at.git, process.env.FB_DEPLOY_WORKER, process.env.FB_DEPLOY_TREE, dn) : installed;
