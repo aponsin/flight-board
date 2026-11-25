@@ -1,0 +1,2 @@
+PASS Quick (stack head: board-roll-2 #C1423 #C1425 + board-roll-3 #C1426 #C1427 + #C1429). #C1423 fix dc83c07b reads mid-turn notices (7/8 mutants killed; the survivor is an equivalent pre-filter). #C1425 re-cut unchanged. #C1429 9/10 (survivor equivalent). Low test gaps, all surviving the whole suite: #C1427 agentStates not passing cards; #C1427 the 6-card cap; #C1426 the addShipReads wiring in main, ancestry null read as deploying, a null ships list made an array. Suite 3867 pass 0 fail.
+signed-by: Checker 2
