@@ -46,7 +46,7 @@ test("a #T link in text shows its thread's bubble; a card's link keeps the card'
 });
 
 test("wiring: hover (a mouse only) and focus show it for #T and #C links; a click hides it before opening the thread", () => {
-  assert.match(page, /const BUB_REFS="\[data-cref\],\[data-tref\]";/);
+  assert.match(page, /const BUB_REFS="\[data-cref\],\[data-tref\],\[data-ctip\]";/);
   assert.match(page, /addEventListener\("mouseover",e=>\{if\(!HOVER\(\)\)return;const a=e\.target\.closest&&e\.target\.closest\(BUB_REFS\)/, "a phone's tap goes straight to the thread");
   assert.match(page, /addEventListener\("focusin",e=>\{const a=e\.target\.closest&&e\.target\.closest\(BUB_REFS\)/);
   assert.match(page, /closest\("\[data-tref\]"\);if\(!a\)return;e\.preventDefault\(\);cbubHide\(\);/);
